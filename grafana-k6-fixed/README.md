@@ -34,19 +34,27 @@ curl http://localhost:8086/ping
 
 ```bash
 # Smoke test
-K6_PROFILE=smoke BASE_URL=https://your-api.com k6 run \
-  --out influxdb=http://localhost:8086/k6 \
-  k6_e2e_load_test.js
+K6_PROFILE=smoke BASE_URL=https://u3w2iq9qbd.execute-api.us-east-1.amazonaws.com k6 run --out influxdb=http://localhost:8086/k6 k6_e2e_load_test.js
 
 # Load test
-K6_PROFILE=load BASE_URL=https://your-api.com k6 run \
-  --out influxdb=http://localhost:8086/k6 \
-  k6_e2e_load_test.js
+BASE_URL=https://u3w2iq9qbd.execute-api.us-east-1.amazonaws.com k6 run --out influxdb=http://localhost:8086/k6 k6_e2e_load_test.js
+
+#Peak Test
+K6_PROFILE=peak BASE_URL=https://u3w2iq9qbd.execute-api.us-east-1.amazonaws.com k6 run --out influxdb=http://localhost:8086/k6 k6_e2e_load_test.js
+
+#Stress Test
+K6_PROFILE=stress BASE_URL=https://u3w2iq9qbd.execute-api.us-east-1.amazonaws.com k6 run --out influxdb=http://localhost:8086/k6 k6_e2e_load_test.js
+
+#Spike Test
+K6_PROFILE=spike BASE_URL=https://u3w2iq9qbd.execute-api.us-east-1.amazonaws.com k6 run --out influxdb=http://localhost:8086/k6 k6_e2e_load_test.js
+
+#Soak Test
+K6_PROFILE=soak BASE_URL=https://u3w2iq9qbd.execute-api.us-east-1.amazonaws.com k6 run --out influxdb=http://localhost:8086/k6 k6_e2e_load_test.js
 ```
 
 **Windows PowerShell:**
 ```powershell
-$env:K6_PROFILE="smoke"; $env:BASE_URL="https://your-api.com"
+$env:K6_PROFILE="smoke"; $env:BASE_URL="https://u3w2iq9qbd.execute-api.us-east-1.amazonaws.com"
 k6 run --out influxdb=http://localhost:8086/k6 k6_e2e_load_test.js
 ```
 
