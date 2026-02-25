@@ -1,0 +1,136 @@
+{
+  "title": "k6 Load Test — Activity Upload & Extraction API",
+  "uid": "k6-activity-api",
+  "version": 1,
+  "schemaVersion": 38,
+  "refresh": "5s",
+  "time": { "from": "now-1h", "to": "now" },
+  "tags": ["k6", "performance"],
+  "panels": [
+    {
+      "id": 1, "type": "stat", "gridPos": {"h":4,"w":4,"x":0,"y":0},
+      "title": "Total HTTP Requests",
+      "options": {"reduceOptions":{"calcs":["sum"]},"colorMode":"background","orientation":"auto"},
+      "fieldConfig": {"defaults":{"color":{"fixedColor":"blue","mode":"fixed"},"unit":"short"}},
+      "targets": [{"datasource":"InfluxDB-k6","rawQuery":true,"query":"SELECT sum(\"value\") FROM \"http_reqs\" WHERE $timeFilter","refId":"A"}]
+    },
+    {
+      "id": 2, "type": "stat", "gridPos": {"h":4,"w":4,"x":4,"y":0},
+      "title": "Request Rate (req/s)",
+      "options": {"reduceOptions":{"calcs":["mean"]},"colorMode":"background"},
+      "fieldConfig": {"defaults":{"color":{"fixedColor":"green","mode":"fixed"},"unit":"reqps","decimals":2}},
+      "targets": [{"datasource":"InfluxDB-k6","rawQuery":true,"query":"SELECT non_negative_derivative(sum(\"value\"), 1s) as \"req/s\" FROM \"http_reqs\" WHERE $timeFilter GROUP BY time($__interval)","refId":"A"}]
+    },
+    {
+      "id": 3, "type": "stat", "gridPos": {"h":4,"w":4,"x":8,"y":0},
+      "title": "Error Rate",
+      "options": {"reduceOptions":{"calcs":["mean"]},"colorMode":"background"},
+      "fieldConfig": {"defaults":{"color":{"mode":"thresholds"},"thresholds":{"steps":[{"color":"green","value":null},{"color":"yellow","value":0.01},{"color":"red","value":0.05}]},"unit":"percentunit","decimals":2}},
+      "targets": [{"datasource":"InfluxDB-k6","rawQuery":true,"query":"SELECT mean(\"value\") FROM \"http_req_failed\" WHERE $timeFilter GROUP BY time($__interval)","refId":"A"}]
+    },
+    {
+      "id": 4, "type": "stat", "gridPos": {"h":4,"w":4,"x":12,"y":0},
+      "title": "Active VUs",
+      "options": {"reduceOptions":{"calcs":["lastNotNull"]},"colorMode":"background"},
+      "fieldConfig": {"defaults":{"color":{"fixedColor":"purple","mode":"fixed"},"unit":"short"}},
+      "targets": [{"datasource":"InfluxDB-k6","rawQuery":true,"query":"SELECT last(\"value\") FROM \"vus\" WHERE $timeFilter GROUP BY time($__interval)","refId":"A"}]
+    },
+    {
+      "id": 5, "type": "stat", "gridPos": {"h":4,"w":4,"x":16,"y":0},
+      "title": "p95 Response Time",
+      "options": {"reduceOptions":{"calcs":["mean"]},"colorMode":"background"},
+      "fieldConfig": {"defaults":{"color":{"mode":"thresholds"},"thresholds":{"steps":[{"color":"green","value":null},{"color":"yellow","value":500},{"color":"red","value":1000}]},"unit":"ms","decimals":0}},
+      "targets": [{"datasource":"InfluxDB-k6","rawQuery":true,"query":"SELECT percentile(\"value\", 95) FROM \"http_req_duration\" WHERE $timeFilter GROUP BY time($__interval)","refId":"A"}]
+    },
+    {
+      "id": 6, "type": "stat", "gridPos": {"h":4,"w":4,"x":20,"y":0},
+      "title": "4xx + 5xx Errors",
+      "options": {"reduceOptions":{"calcs":["sum"]},"colorMode":"background"},
+      "fieldConfig": {"defaults":{"color":{"mode":"thresholds"},"thresholds":{"steps":[{"color":"green","value":null},{"color":"red","value":1}]},"unit":"short"}},
+      "targets": [
+        {"datasource":"InfluxDB-k6","rawQuery":true,"query":"SELECT sum(\"value\") FROM \"errors_4xx\" WHERE $timeFilter","refId":"A"},
+        {"datasource":"InfluxDB-k6","rawQuery":true,"query":"SELECT sum(\"value\") FROM \"errors_5xx\" WHERE $timeFilter","refId":"B"}
+      ]
+    },
+    {
+      "id": 10, "type": "timeseries", "gridPos": {"h":9,"w":16,"x":0,"y":4},
+      "title": "Response Time — p50 / p90 / p95 / p99",
+      "fieldConfig": {
+        "defaults":{"unit":"ms","custom":{"lineWidth":2}},
+        "overrides":[
+          {"matcher":{"id":"byName","options":"p95"},"properties":[{"id":"color","value":{"fixedColor":"orange","mode":"fixed"}}]},
+          {"matcher":{"id":"byName","options":"p99"},"properties":[{"id":"color","value":{"fixedColor":"red","mode":"fixed"}}]}
+        ]
+      },
+      "targets": [
+        {"datasource":"InfluxDB-k6","rawQuery":true,"query":"SELECT percentile(\"value\",50) as \"p50\" FROM \"http_req_duration\" WHERE $timeFilter GROUP BY time($__interval)","refId":"p50"},
+        {"datasource":"InfluxDB-k6","rawQuery":true,"query":"SELECT percentile(\"value\",90) as \"p90\" FROM \"http_req_duration\" WHERE $timeFilter GROUP BY time($__interval)","refId":"p90"},
+        {"datasource":"InfluxDB-k6","rawQuery":true,"query":"SELECT percentile(\"value\",95) as \"p95\" FROM \"http_req_duration\" WHERE $timeFilter GROUP BY time($__interval)","refId":"p95"},
+        {"datasource":"InfluxDB-k6","rawQuery":true,"query":"SELECT percentile(\"value\",99) as \"p99\" FROM \"http_req_duration\" WHERE $timeFilter GROUP BY time($__interval)","refId":"p99"}
+      ]
+    },
+    {
+      "id": 11, "type": "timeseries", "gridPos": {"h":9,"w":8,"x":16,"y":4},
+      "title": "Active VUs & Throughput",
+      "fieldConfig": {
+        "defaults":{"custom":{"lineWidth":2}},
+        "overrides":[
+          {"matcher":{"id":"byName","options":"VUs"},"properties":[{"id":"unit","value":"short"},{"id":"custom.axisPlacement","value":"left"},{"id":"color","value":{"fixedColor":"blue","mode":"fixed"}}]},
+          {"matcher":{"id":"byName","options":"req/s"},"properties":[{"id":"unit","value":"reqps"},{"id":"custom.axisPlacement","value":"right"},{"id":"color","value":{"fixedColor":"green","mode":"fixed"}}]}
+        ]
+      },
+      "targets": [
+        {"datasource":"InfluxDB-k6","rawQuery":true,"query":"SELECT last(\"value\") as \"VUs\" FROM \"vus\" WHERE $timeFilter GROUP BY time($__interval)","refId":"VUs"},
+        {"datasource":"InfluxDB-k6","rawQuery":true,"query":"SELECT non_negative_derivative(sum(\"value\"),1s) as \"req/s\" FROM \"http_reqs\" WHERE $timeFilter GROUP BY time($__interval)","refId":"rps"}
+      ]
+    },
+    {
+      "id": 20, "type": "timeseries", "gridPos": {"h":9,"w":24,"x":0,"y":13},
+      "title": "Endpoint p95 Latency Over Time",
+      "fieldConfig": {"defaults":{"unit":"ms","custom":{"lineWidth":2}}},
+      "targets": [
+        {"datasource":"InfluxDB-k6","rawQuery":true,"query":"SELECT percentile(\"value\",95) as \"Activity Presign\"     FROM \"presign_duration\"               WHERE $timeFilter GROUP BY time($__interval)","refId":"A"},
+        {"datasource":"InfluxDB-k6","rawQuery":true,"query":"SELECT percentile(\"value\",95) as \"Activity Upload\"      FROM \"upload_duration\"                WHERE $timeFilter GROUP BY time($__interval)","refId":"B"},
+        {"datasource":"InfluxDB-k6","rawQuery":true,"query":"SELECT percentile(\"value\",95) as \"AI Extract\"           FROM \"extract_duration\"               WHERE $timeFilter GROUP BY time($__interval)","refId":"C"},
+        {"datasource":"InfluxDB-k6","rawQuery":true,"query":"SELECT percentile(\"value\",95) as \"Quiz Generate\"        FROM \"quiz_generate_duration\"         WHERE $timeFilter GROUP BY time($__interval)","refId":"D"},
+        {"datasource":"InfluxDB-k6","rawQuery":true,"query":"SELECT percentile(\"value\",95) as \"Init Recommend\"       FROM \"init_recommend_duration\"        WHERE $timeFilter GROUP BY time($__interval)","refId":"E"},
+        {"datasource":"InfluxDB-k6","rawQuery":true,"query":"SELECT percentile(\"value\",95) as \"Revise Recommend\"     FROM \"revise_recommend_duration\"      WHERE $timeFilter GROUP BY time($__interval)","refId":"F"},
+        {"datasource":"InfluxDB-k6","rawQuery":true,"query":"SELECT percentile(\"value\",95) as \"Sim Create\"           FROM \"simulation_create_duration\"     WHERE $timeFilter GROUP BY time($__interval)","refId":"G"},
+        {"datasource":"InfluxDB-k6","rawQuery":true,"query":"SELECT percentile(\"value\",95) as \"Sim Evaluate\"         FROM \"simulation_evaluation_duration\" WHERE $timeFilter GROUP BY time($__interval)","refId":"H"},
+        {"datasource":"InfluxDB-k6","rawQuery":true,"query":"SELECT percentile(\"value\",95) as \"Image Presign\"        FROM \"image_presign_duration\"         WHERE $timeFilter GROUP BY time($__interval)","refId":"I"},
+        {"datasource":"InfluxDB-k6","rawQuery":true,"query":"SELECT percentile(\"value\",95) as \"Image Upload\"         FROM \"image_upload_duration\"          WHERE $timeFilter GROUP BY time($__interval)","refId":"J"},
+        {"datasource":"InfluxDB-k6","rawQuery":true,"query":"SELECT percentile(\"value\",95) as \"Admin Presign\"        FROM \"admin_presign_duration\"         WHERE $timeFilter GROUP BY time($__interval)","refId":"K"},
+        {"datasource":"InfluxDB-k6","rawQuery":true,"query":"SELECT percentile(\"value\",95) as \"Admin Upload\"         FROM \"admin_upload_duration\"          WHERE $timeFilter GROUP BY time($__interval)","refId":"L"},
+        {"datasource":"InfluxDB-k6","rawQuery":true,"query":"SELECT percentile(\"value\",95) as \"Admin Extract\"        FROM \"admin_extract_duration\"         WHERE $timeFilter GROUP BY time($__interval)","refId":"M"}
+      ]
+    },
+    {
+      "id": 21, "type": "timeseries", "gridPos": {"h":9,"w":12,"x":0,"y":22},
+      "title": "4xx & 5xx Errors Over Time",
+      "fieldConfig": {
+        "defaults":{"custom":{"lineWidth":2,"fillOpacity":15}},
+        "overrides":[
+          {"matcher":{"id":"byName","options":"4xx"},"properties":[{"id":"color","value":{"fixedColor":"orange","mode":"fixed"}}]},
+          {"matcher":{"id":"byName","options":"5xx"},"properties":[{"id":"color","value":{"fixedColor":"red","mode":"fixed"}}]}
+        ]
+      },
+      "targets": [
+        {"datasource":"InfluxDB-k6","rawQuery":true,"query":"SELECT sum(\"value\") as \"4xx\" FROM \"errors_4xx\" WHERE $timeFilter GROUP BY time($__interval)","refId":"A"},
+        {"datasource":"InfluxDB-k6","rawQuery":true,"query":"SELECT sum(\"value\") as \"5xx\" FROM \"errors_5xx\" WHERE $timeFilter GROUP BY time($__interval)","refId":"B"}
+      ]
+    },
+    {
+      "id": 22, "type": "timeseries", "gridPos": {"h":9,"w":12,"x":12,"y":22},
+      "title": "HTTP Timing Breakdown (avg)",
+      "fieldConfig": {"defaults":{"unit":"ms","custom":{"lineWidth":2}}},
+      "targets": [
+        {"datasource":"InfluxDB-k6","rawQuery":true,"query":"SELECT mean(\"value\") as \"DNS Lookup\"   FROM \"http_req_blocked\"        WHERE $timeFilter GROUP BY time($__interval)","refId":"A"},
+        {"datasource":"InfluxDB-k6","rawQuery":true,"query":"SELECT mean(\"value\") as \"Connecting\"   FROM \"http_req_connecting\"    WHERE $timeFilter GROUP BY time($__interval)","refId":"B"},
+        {"datasource":"InfluxDB-k6","rawQuery":true,"query":"SELECT mean(\"value\") as \"TLS\"          FROM \"http_req_tls_handshaking\" WHERE $timeFilter GROUP BY time($__interval)","refId":"C"},
+        {"datasource":"InfluxDB-k6","rawQuery":true,"query":"SELECT mean(\"value\") as \"Sending\"      FROM \"http_req_sending\"       WHERE $timeFilter GROUP BY time($__interval)","refId":"D"},
+        {"datasource":"InfluxDB-k6","rawQuery":true,"query":"SELECT mean(\"value\") as \"Waiting\"      FROM \"http_req_waiting\"       WHERE $timeFilter GROUP BY time($__interval)","refId":"E"},
+        {"datasource":"InfluxDB-k6","rawQuery":true,"query":"SELECT mean(\"value\") as \"Receiving\"    FROM \"http_req_receiving\"     WHERE $timeFilter GROUP BY time($__interval)","refId":"F"}
+      ]
+    }
+  ]
+}

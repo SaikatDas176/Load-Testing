@@ -1,0 +1,1351 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ============================================================
+  JMETER END-TO-END LOAD TEST PLAN
+  Activity Upload & Extraction API
+  ============================================================
+  Author  : Performance Engineering Team
+  Version : 1.0
+  Date    : February 2026
+
+  Test Coverage (13 Endpoints):
+    Thread Group 1 — USER E2E WORKFLOW (90% traffic)
+      S1  POST /activity/presign
+      S2  POST /activity/upload
+      S3  POST /extract
+      S4  POST /user/quiz-generate
+      S5  POST /user/init-recommend
+      S6  POST /user/simulation-create
+      S7  POST /user/simulation-evaluation
+      S8  POST /user/revise-recommend
+      S9  POST /user/image/presign
+      S10 POST /user/image/upload
+
+    Thread Group 2 — ADMIN E2E WORKFLOW (10% traffic)
+      S11 POST /admin/cluster/presign
+      S12 POST /admin/cluster/upload
+      S13 POST /admin/cluster/extract
+
+    Thread Group 3 — NEGATIVE / BOUNDARY TESTS (background)
+
+  Usage:
+    jmeter -n -t jmeter_e2e_load_test.jmx \
+           -Jbase_url=https://api.example.com \
+           -Jthreads=200 \
+           -Jramp_up=300 \
+           -Jduration=2700 \
+           -l results/results.jtl \
+           -e -o results/html-report/
+
+  User-defined variables (override via -J flags):
+    base_url     — API base URL            (default: http://localhost:8080)
+    api_token    — Bearer token if needed  (default: empty)
+    threads      — Peak VU count           (default: 100)
+    admin_threads— Admin VU count          (default: 10)
+    ramp_up      — Ramp-up seconds         (default: 300)
+    duration     — Steady-state seconds    (default: 1800)
+    think_min    — Min think time ms       (default: 1000)
+    think_max    — Max think time ms       (default: 3000)
+  ============================================================
+-->
+<jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">
+  <hashTree>
+
+    <!-- ═══════════════════════════════════════════════════
+         TEST PLAN ROOT
+    ═══════════════════════════════════════════════════════ -->
+    <TestPlan guiclass="TestPlanGui" testclass="TestPlan"
+              testname="Activity Upload &amp; Extraction API — E2E Load Test"
+              enabled="true">
+      <stringProp name="TestPlan.comments">
+        End-to-End Performance Test covering all 13 API endpoints.
+        Run: jmeter -n -t jmeter_e2e_load_test.jmx -Jbase_url=https://api.example.com
+      </stringProp>
+      <boolProp name="TestPlan.functional_mode">false</boolProp>
+      <boolProp name="TestPlan.serialize_threadgroups">false</boolProp>
+      <elementProp name="TestPlan.user_defined_variables" elementType="Arguments">
+        <collectionProp name="Arguments.arguments">
+          <elementProp name="base_url" elementType="Argument">
+            <stringProp name="Argument.name">base_url</stringProp>
+            <stringProp name="Argument.value">${__P(base_url,http://localhost:8080)}</stringProp>
+          </elementProp>
+          <elementProp name="api_token" elementType="Argument">
+            <stringProp name="Argument.name">api_token</stringProp>
+            <stringProp name="Argument.value">${__P(api_token,)}</stringProp>
+          </elementProp>
+          <elementProp name="threads" elementType="Argument">
+            <stringProp name="Argument.name">threads</stringProp>
+            <stringProp name="Argument.value">${__P(threads,100)}</stringProp>
+          </elementProp>
+          <elementProp name="admin_threads" elementType="Argument">
+            <stringProp name="Argument.name">admin_threads</stringProp>
+            <stringProp name="Argument.value">${__P(admin_threads,10)}</stringProp>
+          </elementProp>
+          <elementProp name="ramp_up" elementType="Argument">
+            <stringProp name="Argument.name">ramp_up</stringProp>
+            <stringProp name="Argument.value">${__P(ramp_up,300)}</stringProp>
+          </elementProp>
+          <elementProp name="duration" elementType="Argument">
+            <stringProp name="Argument.name">duration</stringProp>
+            <stringProp name="Argument.value">${__P(duration,1800)}</stringProp>
+          </elementProp>
+          <elementProp name="think_min" elementType="Argument">
+            <stringProp name="Argument.name">think_min</stringProp>
+            <stringProp name="Argument.value">${__P(think_min,1000)}</stringProp>
+          </elementProp>
+          <elementProp name="think_max" elementType="Argument">
+            <stringProp name="Argument.name">think_max</stringProp>
+            <stringProp name="Argument.value">${__P(think_max,3000)}</stringProp>
+          </elementProp>
+          <!-- Computed unique ID base: VU number offset -->
+          <elementProp name="id_offset" elementType="Argument">
+            <stringProp name="Argument.name">id_offset</stringProp>
+            <stringProp name="Argument.value">100000</stringProp>
+          </elementProp>
+        </collectionProp>
+      </elementProp>
+    </TestPlan>
+    <hashTree>
+
+      <!-- ═══════════════════════════════════════════════════
+           HTTP REQUEST DEFAULTS  (applied to all samplers)
+      ═══════════════════════════════════════════════════════ -->
+      <ConfigTestElement guiclass="HttpDefaultsGui" testclass="ConfigTestElement"
+                         testname="HTTP Request Defaults" enabled="true">
+        <elementProp name="HTTPsampler.Arguments" elementType="Arguments">
+          <collectionProp name="Arguments.arguments"/>
+        </elementProp>
+        <stringProp name="HTTPSampler.domain">${base_url}</stringProp>
+        <stringProp name="HTTPSampler.port"></stringProp>
+        <stringProp name="HTTPSampler.protocol"></stringProp>
+        <stringProp name="HTTPSampler.connect_timeout">10000</stringProp>
+        <stringProp name="HTTPSampler.response_timeout">30000</stringProp>
+        <stringProp name="HTTPSampler.implementation">HttpClient4</stringProp>
+      </ConfigTestElement>
+      <hashTree/>
+
+      <!-- ═══════════════════════════════════════════════════
+           HTTP HEADER MANAGER (global)
+      ═══════════════════════════════════════════════════════ -->
+      <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager"
+                     testname="Global HTTP Headers" enabled="true">
+        <collectionProp name="HeaderManager.headers">
+          <elementProp name="Accept" elementType="Header">
+            <stringProp name="Header.name">Accept</stringProp>
+            <stringProp name="Header.value">application/json</stringProp>
+          </elementProp>
+          <elementProp name="Authorization" elementType="Header">
+            <stringProp name="Header.name">Authorization</stringProp>
+            <stringProp name="Header.value">Bearer ${api_token}</stringProp>
+          </elementProp>
+          <elementProp name="X-Test-Run" elementType="Header">
+            <stringProp name="Header.name">X-Test-Run</stringProp>
+            <stringProp name="Header.value">performance-e2e-${__time(yyyyMMdd)}</stringProp>
+          </elementProp>
+        </collectionProp>
+      </HeaderManager>
+      <hashTree/>
+
+      <!-- ═══════════════════════════════════════════════════
+           CSV DATA SET — Test User Pool
+      ═══════════════════════════════════════════════════════ -->
+      <!--
+      <CSVDataSet guiclass="TestBeanGUI" testclass="CSVDataSet"
+                  testname="User Test Data" enabled="true">
+        <stringProp name="filename">testdata/users.csv</stringProp>
+        <stringProp name="variableNames">test_user_id,test_assessment_id,test_cluster_id</stringProp>
+        <stringProp name="delimiter">,</stringProp>
+        <boolProp name="quotedData">false</boolProp>
+        <boolProp name="recycle">true</boolProp>
+        <boolProp name="stopThread">false</boolProp>
+        <stringProp name="shareMode">shareMode.all</stringProp>
+      </CSVDataSet>
+      <hashTree/>
+      -->
+
+      <!-- ═══════════════════════════════════════════════════
+           THREAD GROUP 1 — USER E2E WORKFLOW
+      ═══════════════════════════════════════════════════════ -->
+      <ThreadGroup guiclass="ThreadGroupGui" testclass="ThreadGroup"
+                   testname="TG1 — User E2E Workflow (90% traffic)" enabled="true">
+        <stringProp name="ThreadGroup.on_sample_error">continue</stringProp>
+        <elementProp name="ThreadGroup.main_controller" elementType="LoopController">
+          <boolProp name="LoopController.continue_forever">false</boolProp>
+          <intProp name="LoopController.loops">-1</intProp>
+        </elementProp>
+        <stringProp name="ThreadGroup.num_threads">${threads}</stringProp>
+        <stringProp name="ThreadGroup.ramp_time">${ramp_up}</stringProp>
+        <boolProp name="ThreadGroup.scheduler">true</boolProp>
+        <stringProp name="ThreadGroup.duration">${duration}</stringProp>
+        <stringProp name="ThreadGroup.delay">0</stringProp>
+      </ThreadGroup>
+      <hashTree>
+
+        <!-- ── Counter: unique assessment_id per thread+iteration ── -->
+        <CounterConfig guiclass="CounterConfigGui" testclass="CounterConfig"
+                       testname="Assessment ID Counter" enabled="true">
+          <stringProp name="CounterConfig.start">100001</stringProp>
+          <stringProp name="CounterConfig.end">9999999</stringProp>
+          <stringProp name="CounterConfig.incr">1</stringProp>
+          <stringProp name="CounterConfig.name">assessment_id</stringProp>
+          <stringProp name="CounterConfig.format"></stringProp>
+          <boolProp name="CounterConfig.per_user">true</boolProp>
+        </CounterConfig>
+        <hashTree/>
+
+        <!-- ── Random file name variable ── -->
+        <JSR223PreProcessor guiclass="TestBeanGUI" testclass="JSR223PreProcessor"
+                            testname="Set Random Variables" enabled="true">
+          <stringProp name="scriptLanguage">groovy</stringProp>
+          <stringProp name="script">
+import java.util.Random
+Random rand = new Random()
+
+// Random file selection
+def pdfFiles = ['resume.pdf', 'cv.pdf', 'portfolio.pdf', 'experience.pdf']
+def docxFiles = ['skills.docx', 'history.docx']
+def allActivity = pdfFiles + docxFiles
+def imageFiles = ['profile_pic.jpg', 'avatar.jpeg', 'headshot.png']
+def reasons = ['User requested alternative', 'Low simulation score', 'New skill data', 'Preference update']
+
+vars.put('activity_file_name', allActivity[rand.nextInt(allActivity.size())])
+vars.put('image_file_name', imageFiles[rand.nextInt(imageFiles.size())])
+vars.put('revise_reason', reasons[rand.nextInt(reasons.size())])
+vars.put('cluster_id', String.valueOf(rand.nextInt(900) + 100))
+vars.put('think_time', String.valueOf(rand.nextInt(
+  Integer.parseInt(vars.get('think_max')) - Integer.parseInt(vars.get('think_min'))
+) + Integer.parseInt(vars.get('think_min'))))
+vars.put('run_image_upload', (rand.nextInt(3) == 0) ? 'true' : 'false')
+          </stringProp>
+        </JSR223PreProcessor>
+        <hashTree/>
+
+        <!-- ╔══════════════════════════════════════════╗ -->
+        <!-- ║  STAGE 1: ACTIVITY PRESIGN               ║ -->
+        <!-- ╚══════════════════════════════════════════╝ -->
+        <TransactionController guiclass="TransactionControllerGui"
+                               testclass="TransactionController"
+                               testname="S1 — Activity Presign" enabled="true">
+          <boolProp name="TransactionController.includeTimers">false</boolProp>
+        </TransactionController>
+        <hashTree>
+          <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy"
+                            testname="POST /activity/presign" enabled="true">
+            <stringProp name="HTTPSampler.path">/activity/presign</stringProp>
+            <stringProp name="HTTPSampler.method">POST</stringProp>
+            <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+            <boolProp name="HTTPSampler.postBodyRaw">true</boolProp>
+            <elementProp name="HTTPsampler.Arguments" elementType="Arguments">
+              <collectionProp name="Arguments.arguments">
+                <elementProp name="" elementType="HTTPArgument">
+                  <stringProp name="Argument.value">{"file_name": "${activity_file_name}"}</stringProp>
+                  <stringProp name="Argument.metadata">=</stringProp>
+                </elementProp>
+              </collectionProp>
+            </elementProp>
+          </HTTPSamplerProxy>
+          <hashTree>
+            <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager"
+                           testname="Content-Type JSON" enabled="true">
+              <collectionProp name="HeaderManager.headers">
+                <elementProp name="" elementType="Header">
+                  <stringProp name="Header.name">Content-Type</stringProp>
+                  <stringProp name="Header.value">application/json</stringProp>
+                </elementProp>
+              </collectionProp>
+            </HeaderManager>
+            <hashTree/>
+
+            <!-- Extract upload_url and object_key for upload step -->
+            <JSONPathExtractor guiclass="JSONPathExtractorGui" testclass="JSONPathExtractor"
+                               testname="Extract upload_url" enabled="true">
+              <stringProp name="JSONPathExtractor.referenceName">upload_url</stringProp>
+              <stringProp name="JSONPathExtractor.jsonPathExpr">$.upload_url</stringProp>
+              <stringProp name="JSONPathExtractor.defaultValue">PRESIGN_FAILED</stringProp>
+            </JSONPathExtractor>
+            <hashTree/>
+            <JSONPathExtractor guiclass="JSONPathExtractorGui" testclass="JSONPathExtractor"
+                               testname="Extract object_key" enabled="true">
+              <stringProp name="JSONPathExtractor.referenceName">object_key</stringProp>
+              <stringProp name="JSONPathExtractor.jsonPathExpr">$.object_key</stringProp>
+              <stringProp name="JSONPathExtractor.defaultValue">OBJECT_KEY_FAILED</stringProp>
+            </JSONPathExtractor>
+            <hashTree/>
+
+            <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion"
+                               testname="Assert 200 OK" enabled="true">
+              <collectionProp name="Assertion.test_strings">
+                <stringProp name="0">200</stringProp>
+              </collectionProp>
+              <intProp name="Assertion.test_type">8</intProp>
+              <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+            </ResponseAssertion>
+            <hashTree/>
+            <JSONPathAssertion guiclass="JSONPathAssertionGui" testclass="JSONPathAssertion"
+                               testname="Assert upload_url present" enabled="true">
+              <stringProp name="JSON_PATH">$.upload_url</stringProp>
+              <stringProp name="EXPECTED_VALUE"></stringProp>
+              <boolProp name="JSONVALIDATION">false</boolProp>
+              <boolProp name="EXPECT_NULL">false</boolProp>
+            </JSONPathAssertion>
+            <hashTree/>
+
+            <DurationAssertion guiclass="DurationAssertionGui" testclass="DurationAssertion"
+                               testname="Response Time &lt; 300ms" enabled="true">
+              <longProp name="DurationAssertion.duration">300</longProp>
+            </DurationAssertion>
+            <hashTree/>
+          </hashTree><!-- /presign hashTree -->
+
+          <!-- Think time after presign -->
+          <GaussianRandomTimer guiclass="GaussianRandomTimerGui" testclass="GaussianRandomTimer"
+                               testname="Think Time 1-2s" enabled="true">
+            <stringProp name="ConstantTimer.delay">1500</stringProp>
+            <stringProp name="RandomTimer.range">500</stringProp>
+          </GaussianRandomTimer>
+          <hashTree/>
+        </hashTree><!-- /S1 presign transaction -->
+
+        <!-- ╔══════════════════════════════════════════╗ -->
+        <!-- ║  STAGE 2: ACTIVITY FILE UPLOAD           ║ -->
+        <!-- ╚══════════════════════════════════════════╝ -->
+        <TransactionController guiclass="TransactionControllerGui"
+                               testclass="TransactionController"
+                               testname="S2 — Activity Upload" enabled="true">
+          <boolProp name="TransactionController.includeTimers">false</boolProp>
+        </TransactionController>
+        <hashTree>
+          <IfController guiclass="IfControllerPanel" testclass="IfController"
+                        testname="Only if presign succeeded" enabled="true">
+            <stringProp name="IfController.condition">"${upload_url}" != "PRESIGN_FAILED"</stringProp>
+            <boolProp name="IfController.evaluateAll">false</boolProp>
+          </IfController>
+          <hashTree>
+            <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy"
+                              testname="POST /activity/upload" enabled="true">
+              <stringProp name="HTTPSampler.path">/activity/upload</stringProp>
+              <stringProp name="HTTPSampler.method">POST</stringProp>
+              <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+              <boolProp name="HTTPSampler.DO_MULTIPART_POST">true</boolProp>
+              <elementProp name="HTTPsampler.Arguments" elementType="Arguments">
+                <collectionProp name="Arguments.arguments">
+                  <elementProp name="upload_url" elementType="HTTPArgument">
+                    <boolProp name="HTTPArgument.always_encode">false</boolProp>
+                    <stringProp name="Argument.name">upload_url</stringProp>
+                    <stringProp name="Argument.value">${upload_url}</stringProp>
+                    <stringProp name="Argument.metadata">=</stringProp>
+                  </elementProp>
+                  <elementProp name="object_key" elementType="HTTPArgument">
+                    <boolProp name="HTTPArgument.always_encode">false</boolProp>
+                    <stringProp name="Argument.name">object_key</stringProp>
+                    <stringProp name="Argument.value">${object_key}</stringProp>
+                    <stringProp name="Argument.metadata">=</stringProp>
+                  </elementProp>
+                  <!-- File parameter: points to testdata directory -->
+                  <elementProp name="file" elementType="HTTPArgument">
+                    <boolProp name="HTTPArgument.always_encode">false</boolProp>
+                    <stringProp name="Argument.name">file</stringProp>
+                    <stringProp name="Argument.value">testdata/resume_sample.pdf</stringProp>
+                    <stringProp name="Argument.contentType">application/pdf</stringProp>
+                    <stringProp name="Argument.metadata">=</stringProp>
+                  </elementProp>
+                </collectionProp>
+              </elementProp>
+              <stringProp name="HTTPSampler.FILES_PARAMS">
+                testdata/resume_sample.pdf|file|application/pdf
+              </stringProp>
+            </HTTPSamplerProxy>
+            <hashTree>
+              <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion"
+                                 testname="Assert 200 OK" enabled="true">
+                <collectionProp name="Assertion.test_strings">
+                  <stringProp name="0">200</stringProp>
+                </collectionProp>
+                <intProp name="Assertion.test_type">8</intProp>
+                <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+              </ResponseAssertion>
+              <hashTree/>
+              <DurationAssertion guiclass="DurationAssertionGui" testclass="DurationAssertion"
+                                 testname="Response Time &lt; 800ms" enabled="true">
+                <longProp name="DurationAssertion.duration">800</longProp>
+              </DurationAssertion>
+              <hashTree/>
+            </hashTree>
+          </hashTree>
+
+          <GaussianRandomTimer guiclass="GaussianRandomTimerGui" testclass="GaussianRandomTimer"
+                               testname="Think Time 1-2s" enabled="true">
+            <stringProp name="ConstantTimer.delay">1500</stringProp>
+            <stringProp name="RandomTimer.range">500</stringProp>
+          </GaussianRandomTimer>
+          <hashTree/>
+        </hashTree><!-- /S2 upload transaction -->
+
+        <!-- ╔══════════════════════════════════════════╗ -->
+        <!-- ║  STAGE 3: AI EXTRACTION QUEUE            ║ -->
+        <!-- ╚══════════════════════════════════════════╝ -->
+        <TransactionController guiclass="TransactionControllerGui"
+                               testclass="TransactionController"
+                               testname="S3 — AI Extraction" enabled="true">
+          <boolProp name="TransactionController.includeTimers">false</boolProp>
+        </TransactionController>
+        <hashTree>
+          <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy"
+                            testname="POST /extract" enabled="true">
+            <stringProp name="HTTPSampler.path">/extract</stringProp>
+            <stringProp name="HTTPSampler.method">POST</stringProp>
+            <boolProp name="HTTPSampler.postBodyRaw">true</boolProp>
+            <elementProp name="HTTPsampler.Arguments" elementType="Arguments">
+              <collectionProp name="Arguments.arguments">
+                <elementProp name="" elementType="HTTPArgument">
+                  <stringProp name="Argument.value">{"assessment_id": ${assessment_id}, "object_key": "${object_key}"}</stringProp>
+                  <stringProp name="Argument.metadata">=</stringProp>
+                </elementProp>
+              </collectionProp>
+            </elementProp>
+          </HTTPSamplerProxy>
+          <hashTree>
+            <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager"
+                           testname="Content-Type JSON" enabled="true">
+              <collectionProp name="HeaderManager.headers">
+                <elementProp name="" elementType="Header">
+                  <stringProp name="Header.name">Content-Type</stringProp>
+                  <stringProp name="Header.value">application/json</stringProp>
+                </elementProp>
+              </collectionProp>
+            </HeaderManager>
+            <hashTree/>
+            <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion"
+                               testname="Assert 200 OK" enabled="true">
+              <collectionProp name="Assertion.test_strings">
+                <stringProp name="0">200</stringProp>
+              </collectionProp>
+              <intProp name="Assertion.test_type">8</intProp>
+              <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+            </ResponseAssertion>
+            <hashTree/>
+            <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion"
+                               testname="Assert queued in body" enabled="true">
+              <collectionProp name="Assertion.test_strings">
+                <stringProp name="0">queue</stringProp>
+              </collectionProp>
+              <intProp name="Assertion.test_type">2</intProp><!-- CONTAINS -->
+              <stringProp name="Assertion.test_field">Assertion.response_data</stringProp>
+              <boolProp name="Assertion.assume_success">false</boolProp>
+            </ResponseAssertion>
+            <hashTree/>
+            <DurationAssertion guiclass="DurationAssertionGui" testclass="DurationAssertion"
+                               testname="Response Time &lt; 500ms" enabled="true">
+              <longProp name="DurationAssertion.duration">500</longProp>
+            </DurationAssertion>
+            <hashTree/>
+          </hashTree>
+
+          <GaussianRandomTimer guiclass="GaussianRandomTimerGui" testclass="GaussianRandomTimer"
+                               testname="Think Time 1-3s" enabled="true">
+            <stringProp name="ConstantTimer.delay">2000</stringProp>
+            <stringProp name="RandomTimer.range">1000</stringProp>
+          </GaussianRandomTimer>
+          <hashTree/>
+        </hashTree><!-- /S3 extract transaction -->
+
+        <!-- ╔══════════════════════════════════════════╗ -->
+        <!-- ║  STAGE 4: QUIZ GENERATE                  ║ -->
+        <!-- ╚══════════════════════════════════════════╝ -->
+        <TransactionController guiclass="TransactionControllerGui"
+                               testclass="TransactionController"
+                               testname="S4 — Quiz Generate" enabled="true">
+          <boolProp name="TransactionController.includeTimers">false</boolProp>
+        </TransactionController>
+        <hashTree>
+          <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy"
+                            testname="POST /user/quiz-generate" enabled="true">
+            <stringProp name="HTTPSampler.path">/user/quiz-generate</stringProp>
+            <stringProp name="HTTPSampler.method">POST</stringProp>
+            <boolProp name="HTTPSampler.postBodyRaw">true</boolProp>
+            <elementProp name="HTTPsampler.Arguments" elementType="Arguments">
+              <collectionProp name="Arguments.arguments">
+                <elementProp name="" elementType="HTTPArgument">
+                  <stringProp name="Argument.value">{"assessment_id": ${assessment_id}}</stringProp>
+                  <stringProp name="Argument.metadata">=</stringProp>
+                </elementProp>
+              </collectionProp>
+            </elementProp>
+          </HTTPSamplerProxy>
+          <hashTree>
+            <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager"
+                           testname="Content-Type JSON" enabled="true">
+              <collectionProp name="HeaderManager.headers">
+                <elementProp name="" elementType="Header">
+                  <stringProp name="Header.name">Content-Type</stringProp>
+                  <stringProp name="Header.value">application/json</stringProp>
+                </elementProp>
+              </collectionProp>
+            </HeaderManager>
+            <hashTree/>
+            <JSONPathExtractor guiclass="JSONPathExtractorGui" testclass="JSONPathExtractor"
+                               testname="Extract quiz_id" enabled="true">
+              <stringProp name="JSONPathExtractor.referenceName">quiz_id</stringProp>
+              <stringProp name="JSONPathExtractor.jsonPathExpr">$.quiz_id</stringProp>
+              <stringProp name="JSONPathExtractor.defaultValue">0</stringProp>
+            </JSONPathExtractor>
+            <hashTree/>
+            <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion"
+                               testname="Assert 200 OK" enabled="true">
+              <collectionProp name="Assertion.test_strings">
+                <stringProp name="0">200</stringProp>
+              </collectionProp>
+              <intProp name="Assertion.test_type">8</intProp>
+              <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+            </ResponseAssertion>
+            <hashTree/>
+            <DurationAssertion guiclass="DurationAssertionGui" testclass="DurationAssertion"
+                               testname="Response Time &lt; 500ms" enabled="true">
+              <longProp name="DurationAssertion.duration">500</longProp>
+            </DurationAssertion>
+            <hashTree/>
+          </hashTree>
+
+          <GaussianRandomTimer guiclass="GaussianRandomTimerGui" testclass="GaussianRandomTimer"
+                               testname="Think Time" enabled="true">
+            <stringProp name="ConstantTimer.delay">1500</stringProp>
+            <stringProp name="RandomTimer.range">500</stringProp>
+          </GaussianRandomTimer>
+          <hashTree/>
+        </hashTree><!-- /S4 quiz transaction -->
+
+        <!-- ╔══════════════════════════════════════════╗ -->
+        <!-- ║  STAGE 5: INIT RECOMMEND                 ║ -->
+        <!-- ╚══════════════════════════════════════════╝ -->
+        <TransactionController guiclass="TransactionControllerGui"
+                               testclass="TransactionController"
+                               testname="S5 — Init Recommend" enabled="true">
+          <boolProp name="TransactionController.includeTimers">false</boolProp>
+        </TransactionController>
+        <hashTree>
+          <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy"
+                            testname="POST /user/init-recommend" enabled="true">
+            <stringProp name="HTTPSampler.path">/user/init-recommend</stringProp>
+            <stringProp name="HTTPSampler.method">POST</stringProp>
+            <boolProp name="HTTPSampler.postBodyRaw">true</boolProp>
+            <elementProp name="HTTPsampler.Arguments" elementType="Arguments">
+              <collectionProp name="Arguments.arguments">
+                <elementProp name="" elementType="HTTPArgument">
+                  <stringProp name="Argument.value">{"assessment_id": ${assessment_id}}</stringProp>
+                  <stringProp name="Argument.metadata">=</stringProp>
+                </elementProp>
+              </collectionProp>
+            </elementProp>
+          </HTTPSamplerProxy>
+          <hashTree>
+            <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager"
+                           testname="Content-Type JSON" enabled="true">
+              <collectionProp name="HeaderManager.headers">
+                <elementProp name="" elementType="Header">
+                  <stringProp name="Header.name">Content-Type</stringProp>
+                  <stringProp name="Header.value">application/json</stringProp>
+                </elementProp>
+              </collectionProp>
+            </HeaderManager>
+            <hashTree/>
+            <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion"
+                               testname="Assert 200 OK" enabled="true">
+              <collectionProp name="Assertion.test_strings">
+                <stringProp name="0">200</stringProp>
+              </collectionProp>
+              <intProp name="Assertion.test_type">8</intProp>
+              <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+            </ResponseAssertion>
+            <hashTree/>
+            <DurationAssertion guiclass="DurationAssertionGui" testclass="DurationAssertion"
+                               testname="Response Time &lt; 500ms" enabled="true">
+              <longProp name="DurationAssertion.duration">500</longProp>
+            </DurationAssertion>
+            <hashTree/>
+          </hashTree>
+
+          <GaussianRandomTimer guiclass="GaussianRandomTimerGui" testclass="GaussianRandomTimer"
+                               testname="Think Time" enabled="true">
+            <stringProp name="ConstantTimer.delay">1500</stringProp>
+            <stringProp name="RandomTimer.range">500</stringProp>
+          </GaussianRandomTimer>
+          <hashTree/>
+        </hashTree><!-- /S5 init-recommend transaction -->
+
+        <!-- ╔══════════════════════════════════════════╗ -->
+        <!-- ║  STAGE 6: SIMULATION CREATE              ║ -->
+        <!-- ╚══════════════════════════════════════════╝ -->
+        <TransactionController guiclass="TransactionControllerGui"
+                               testclass="TransactionController"
+                               testname="S6 — Simulation Create" enabled="true">
+          <boolProp name="TransactionController.includeTimers">false</boolProp>
+        </TransactionController>
+        <hashTree>
+          <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy"
+                            testname="POST /user/simulation-create" enabled="true">
+            <stringProp name="HTTPSampler.path">/user/simulation-create</stringProp>
+            <stringProp name="HTTPSampler.method">POST</stringProp>
+            <boolProp name="HTTPSampler.postBodyRaw">true</boolProp>
+            <elementProp name="HTTPsampler.Arguments" elementType="Arguments">
+              <collectionProp name="Arguments.arguments">
+                <elementProp name="" elementType="HTTPArgument">
+                  <stringProp name="Argument.value">{"assessment_id": ${assessment_id}, "cluster_id": ${cluster_id}}</stringProp>
+                  <stringProp name="Argument.metadata">=</stringProp>
+                </elementProp>
+              </collectionProp>
+            </elementProp>
+          </HTTPSamplerProxy>
+          <hashTree>
+            <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager"
+                           testname="Content-Type JSON" enabled="true">
+              <collectionProp name="HeaderManager.headers">
+                <elementProp name="" elementType="Header">
+                  <stringProp name="Header.name">Content-Type</stringProp>
+                  <stringProp name="Header.value">application/json</stringProp>
+                </elementProp>
+              </collectionProp>
+            </HeaderManager>
+            <hashTree/>
+            <JSONPathExtractor guiclass="JSONPathExtractorGui" testclass="JSONPathExtractor"
+                               testname="Extract simulation_id" enabled="true">
+              <stringProp name="JSONPathExtractor.referenceName">simulation_id</stringProp>
+              <stringProp name="JSONPathExtractor.jsonPathExpr">$.simulation_id</stringProp>
+              <stringProp name="JSONPathExtractor.defaultValue">${__Random(5000,9999)}</stringProp>
+            </JSONPathExtractor>
+            <hashTree/>
+            <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion"
+                               testname="Assert 200 OK" enabled="true">
+              <collectionProp name="Assertion.test_strings">
+                <stringProp name="0">200</stringProp>
+              </collectionProp>
+              <intProp name="Assertion.test_type">8</intProp>
+              <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+            </ResponseAssertion>
+            <hashTree/>
+            <DurationAssertion guiclass="DurationAssertionGui" testclass="DurationAssertion"
+                               testname="Response Time &lt; 500ms" enabled="true">
+              <longProp name="DurationAssertion.duration">500</longProp>
+            </DurationAssertion>
+            <hashTree/>
+          </hashTree>
+
+          <GaussianRandomTimer guiclass="GaussianRandomTimerGui" testclass="GaussianRandomTimer"
+                               testname="Think Time 2-4s" enabled="true">
+            <stringProp name="ConstantTimer.delay">3000</stringProp>
+            <stringProp name="RandomTimer.range">1000</stringProp>
+          </GaussianRandomTimer>
+          <hashTree/>
+        </hashTree><!-- /S6 simulation create transaction -->
+
+        <!-- ╔══════════════════════════════════════════╗ -->
+        <!-- ║  STAGE 7: SIMULATION EVALUATION          ║ -->
+        <!-- ╚══════════════════════════════════════════╝ -->
+        <TransactionController guiclass="TransactionControllerGui"
+                               testclass="TransactionController"
+                               testname="S7 — Simulation Evaluation" enabled="true">
+          <boolProp name="TransactionController.includeTimers">false</boolProp>
+        </TransactionController>
+        <hashTree>
+          <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy"
+                            testname="POST /user/simulation-evaluation" enabled="true">
+            <stringProp name="HTTPSampler.path">/user/simulation-evaluation</stringProp>
+            <stringProp name="HTTPSampler.method">POST</stringProp>
+            <boolProp name="HTTPSampler.postBodyRaw">true</boolProp>
+            <elementProp name="HTTPsampler.Arguments" elementType="Arguments">
+              <collectionProp name="Arguments.arguments">
+                <elementProp name="" elementType="HTTPArgument">
+                  <stringProp name="Argument.value">{"assessment_id": ${assessment_id}, "simulation_id": ${simulation_id}, "cluster_id": ${cluster_id}}</stringProp>
+                  <stringProp name="Argument.metadata">=</stringProp>
+                </elementProp>
+              </collectionProp>
+            </elementProp>
+          </HTTPSamplerProxy>
+          <hashTree>
+            <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager"
+                           testname="Content-Type JSON" enabled="true">
+              <collectionProp name="HeaderManager.headers">
+                <elementProp name="" elementType="Header">
+                  <stringProp name="Header.name">Content-Type</stringProp>
+                  <stringProp name="Header.value">application/json</stringProp>
+                </elementProp>
+              </collectionProp>
+            </HeaderManager>
+            <hashTree/>
+            <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion"
+                               testname="Assert 200 OK" enabled="true">
+              <collectionProp name="Assertion.test_strings">
+                <stringProp name="0">200</stringProp>
+              </collectionProp>
+              <intProp name="Assertion.test_type">8</intProp>
+              <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+            </ResponseAssertion>
+            <hashTree/>
+            <DurationAssertion guiclass="DurationAssertionGui" testclass="DurationAssertion"
+                               testname="Response Time &lt; 500ms" enabled="true">
+              <longProp name="DurationAssertion.duration">500</longProp>
+            </DurationAssertion>
+            <hashTree/>
+          </hashTree>
+
+          <GaussianRandomTimer guiclass="GaussianRandomTimerGui" testclass="GaussianRandomTimer"
+                               testname="Think Time" enabled="true">
+            <stringProp name="ConstantTimer.delay">1500</stringProp>
+            <stringProp name="RandomTimer.range">500</stringProp>
+          </GaussianRandomTimer>
+          <hashTree/>
+        </hashTree><!-- /S7 simulation evaluation transaction -->
+
+        <!-- ╔══════════════════════════════════════════╗ -->
+        <!-- ║  STAGE 8: REVISE RECOMMEND               ║ -->
+        <!-- ╚══════════════════════════════════════════╝ -->
+        <TransactionController guiclass="TransactionControllerGui"
+                               testclass="TransactionController"
+                               testname="S8 — Revise Recommend" enabled="true">
+          <boolProp name="TransactionController.includeTimers">false</boolProp>
+        </TransactionController>
+        <hashTree>
+          <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy"
+                            testname="POST /user/revise-recommend" enabled="true">
+            <stringProp name="HTTPSampler.path">/user/revise-recommend</stringProp>
+            <stringProp name="HTTPSampler.method">POST</stringProp>
+            <boolProp name="HTTPSampler.postBodyRaw">true</boolProp>
+            <elementProp name="HTTPsampler.Arguments" elementType="Arguments">
+              <collectionProp name="Arguments.arguments">
+                <elementProp name="" elementType="HTTPArgument">
+                  <stringProp name="Argument.value">{"assessment_id": ${assessment_id}, "revise_reason": "${revise_reason}"}</stringProp>
+                  <stringProp name="Argument.metadata">=</stringProp>
+                </elementProp>
+              </collectionProp>
+            </elementProp>
+          </HTTPSamplerProxy>
+          <hashTree>
+            <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager"
+                           testname="Content-Type JSON" enabled="true">
+              <collectionProp name="HeaderManager.headers">
+                <elementProp name="" elementType="Header">
+                  <stringProp name="Header.name">Content-Type</stringProp>
+                  <stringProp name="Header.value">application/json</stringProp>
+                </elementProp>
+              </collectionProp>
+            </HeaderManager>
+            <hashTree/>
+            <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion"
+                               testname="Assert 200 OK" enabled="true">
+              <collectionProp name="Assertion.test_strings">
+                <stringProp name="0">200</stringProp>
+              </collectionProp>
+              <intProp name="Assertion.test_type">8</intProp>
+              <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+            </ResponseAssertion>
+            <hashTree/>
+            <DurationAssertion guiclass="DurationAssertionGui" testclass="DurationAssertion"
+                               testname="Response Time &lt; 500ms" enabled="true">
+              <longProp name="DurationAssertion.duration">500</longProp>
+            </DurationAssertion>
+            <hashTree/>
+          </hashTree>
+
+          <GaussianRandomTimer guiclass="GaussianRandomTimerGui" testclass="GaussianRandomTimer"
+                               testname="Think Time" enabled="true">
+            <stringProp name="ConstantTimer.delay">1500</stringProp>
+            <stringProp name="RandomTimer.range">500</stringProp>
+          </GaussianRandomTimer>
+          <hashTree/>
+        </hashTree><!-- /S8 revise recommend transaction -->
+
+        <!-- ╔══════════════════════════════════════════════╗ -->
+        <!-- ║  STAGE 9+10: PROFILE IMAGE  (30% of users)  ║ -->
+        <!-- ╚══════════════════════════════════════════════╝ -->
+        <IfController guiclass="IfControllerPanel" testclass="IfController"
+                      testname="Profile Image Upload — 30% of iterations" enabled="true">
+          <stringProp name="IfController.condition">${__groovy(org.apache.commons.lang3.RandomUtils.nextInt(0,10) &lt; 3,)}</stringProp>
+          <boolProp name="IfController.evaluateAll">false</boolProp>
+        </IfController>
+        <hashTree>
+          <TransactionController guiclass="TransactionControllerGui"
+                                 testclass="TransactionController"
+                                 testname="S9 — Image Presign" enabled="true">
+            <boolProp name="TransactionController.includeTimers">false</boolProp>
+          </TransactionController>
+          <hashTree>
+            <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy"
+                              testname="POST /user/image/presign" enabled="true">
+              <stringProp name="HTTPSampler.path">/user/image/presign</stringProp>
+              <stringProp name="HTTPSampler.method">POST</stringProp>
+              <boolProp name="HTTPSampler.postBodyRaw">true</boolProp>
+              <elementProp name="HTTPsampler.Arguments" elementType="Arguments">
+                <collectionProp name="Arguments.arguments">
+                  <elementProp name="" elementType="HTTPArgument">
+                    <stringProp name="Argument.value">{"file_name": "${image_file_name}"}</stringProp>
+                    <stringProp name="Argument.metadata">=</stringProp>
+                  </elementProp>
+                </collectionProp>
+              </elementProp>
+            </HTTPSamplerProxy>
+            <hashTree>
+              <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager"
+                             testname="Content-Type JSON" enabled="true">
+                <collectionProp name="HeaderManager.headers">
+                  <elementProp name="" elementType="Header">
+                    <stringProp name="Header.name">Content-Type</stringProp>
+                    <stringProp name="Header.value">application/json</stringProp>
+                  </elementProp>
+                </collectionProp>
+              </HeaderManager>
+              <hashTree/>
+              <JSONPathExtractor guiclass="JSONPathExtractorGui" testclass="JSONPathExtractor"
+                                 testname="Extract image object_key" enabled="true">
+                <stringProp name="JSONPathExtractor.referenceName">image_object_key</stringProp>
+                <stringProp name="JSONPathExtractor.jsonPathExpr">$.object_key</stringProp>
+                <stringProp name="JSONPathExtractor.defaultValue">IMAGE_KEY_FAILED</stringProp>
+              </JSONPathExtractor>
+              <hashTree/>
+              <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion"
+                                 testname="Assert 200 OK" enabled="true">
+                <collectionProp name="Assertion.test_strings">
+                  <stringProp name="0">200</stringProp>
+                </collectionProp>
+                <intProp name="Assertion.test_type">8</intProp>
+                <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+              </ResponseAssertion>
+              <hashTree/>
+              <DurationAssertion guiclass="DurationAssertionGui" testclass="DurationAssertion"
+                                 testname="Response Time &lt; 300ms" enabled="true">
+                <longProp name="DurationAssertion.duration">300</longProp>
+              </DurationAssertion>
+              <hashTree/>
+            </hashTree>
+
+            <GaussianRandomTimer guiclass="GaussianRandomTimerGui" testclass="GaussianRandomTimer"
+                                 testname="Think Time" enabled="true">
+              <stringProp name="ConstantTimer.delay">1000</stringProp>
+              <stringProp name="RandomTimer.range">500</stringProp>
+            </GaussianRandomTimer>
+            <hashTree/>
+          </hashTree><!-- /S9 image presign -->
+
+          <TransactionController guiclass="TransactionControllerGui"
+                                 testclass="TransactionController"
+                                 testname="S10 — Image Upload" enabled="true">
+            <boolProp name="TransactionController.includeTimers">false</boolProp>
+          </TransactionController>
+          <hashTree>
+            <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy"
+                              testname="POST /user/image/upload" enabled="true">
+              <stringProp name="HTTPSampler.path">/user/image/upload</stringProp>
+              <stringProp name="HTTPSampler.method">POST</stringProp>
+              <boolProp name="HTTPSampler.DO_MULTIPART_POST">true</boolProp>
+              <elementProp name="HTTPsampler.Arguments" elementType="Arguments">
+                <collectionProp name="Arguments.arguments">
+                  <elementProp name="user_id" elementType="HTTPArgument">
+                    <stringProp name="Argument.name">user_id</stringProp>
+                    <stringProp name="Argument.value">${assessment_id}</stringProp>
+                    <stringProp name="Argument.metadata">=</stringProp>
+                  </elementProp>
+                  <elementProp name="object_key" elementType="HTTPArgument">
+                    <stringProp name="Argument.name">object_key</stringProp>
+                    <stringProp name="Argument.value">${image_object_key}</stringProp>
+                    <stringProp name="Argument.metadata">=</stringProp>
+                  </elementProp>
+                </collectionProp>
+              </elementProp>
+              <stringProp name="HTTPSampler.FILES_PARAMS">
+                testdata/profile_sample.jpg|file|image/jpeg
+              </stringProp>
+            </HTTPSamplerProxy>
+            <hashTree>
+              <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion"
+                                 testname="Assert 200 OK" enabled="true">
+                <collectionProp name="Assertion.test_strings">
+                  <stringProp name="0">200</stringProp>
+                </collectionProp>
+                <intProp name="Assertion.test_type">8</intProp>
+                <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+              </ResponseAssertion>
+              <hashTree/>
+              <DurationAssertion guiclass="DurationAssertionGui" testclass="DurationAssertion"
+                                 testname="Response Time &lt; 700ms" enabled="true">
+                <longProp name="DurationAssertion.duration">700</longProp>
+              </DurationAssertion>
+              <hashTree/>
+            </hashTree>
+          </hashTree><!-- /S10 image upload -->
+        </hashTree><!-- /image if controller -->
+
+        <!-- ── Per-iteration Think Time (end of full workflow) ── -->
+        <GaussianRandomTimer guiclass="GaussianRandomTimerGui" testclass="GaussianRandomTimer"
+                             testname="End-of-Workflow Pause 3-7s" enabled="true">
+          <stringProp name="ConstantTimer.delay">5000</stringProp>
+          <stringProp name="RandomTimer.range">2000</stringProp>
+        </GaussianRandomTimer>
+        <hashTree/>
+
+      </hashTree><!-- /TG1 user workflow -->
+
+
+      <!-- ═══════════════════════════════════════════════════
+           THREAD GROUP 2 — ADMIN E2E WORKFLOW (10% traffic)
+      ═══════════════════════════════════════════════════════ -->
+      <ThreadGroup guiclass="ThreadGroupGui" testclass="ThreadGroup"
+                   testname="TG2 — Admin E2E Workflow (10% traffic)" enabled="true">
+        <stringProp name="ThreadGroup.on_sample_error">continue</stringProp>
+        <elementProp name="ThreadGroup.main_controller" elementType="LoopController">
+          <boolProp name="LoopController.continue_forever">false</boolProp>
+          <intProp name="LoopController.loops">-1</intProp>
+        </elementProp>
+        <stringProp name="ThreadGroup.num_threads">${admin_threads}</stringProp>
+        <stringProp name="ThreadGroup.ramp_time">${ramp_up}</stringProp>
+        <boolProp name="ThreadGroup.scheduler">true</boolProp>
+        <stringProp name="ThreadGroup.duration">${duration}</stringProp>
+        <stringProp name="ThreadGroup.delay">0</stringProp>
+      </ThreadGroup>
+      <hashTree>
+
+        <CounterConfig guiclass="CounterConfigGui" testclass="CounterConfig"
+                       testname="Admin Batch ID Counter" enabled="true">
+          <stringProp name="CounterConfig.start">9000001</stringProp>
+          <stringProp name="CounterConfig.end">9999999</stringProp>
+          <stringProp name="CounterConfig.incr">1</stringProp>
+          <stringProp name="CounterConfig.name">admin_batch_id</stringProp>
+          <boolProp name="CounterConfig.per_user">true</boolProp>
+        </CounterConfig>
+        <hashTree/>
+
+        <!-- S11: Admin Cluster Presign -->
+        <TransactionController guiclass="TransactionControllerGui"
+                               testclass="TransactionController"
+                               testname="S11 — Admin Cluster Presign" enabled="true">
+          <boolProp name="TransactionController.includeTimers">false</boolProp>
+        </TransactionController>
+        <hashTree>
+          <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy"
+                            testname="POST /admin/cluster/presign" enabled="true">
+            <stringProp name="HTTPSampler.path">/admin/cluster/presign</stringProp>
+            <stringProp name="HTTPSampler.method">POST</stringProp>
+            <boolProp name="HTTPSampler.postBodyRaw">true</boolProp>
+            <elementProp name="HTTPsampler.Arguments" elementType="Arguments">
+              <collectionProp name="Arguments.arguments">
+                <elementProp name="" elementType="HTTPArgument">
+                  <stringProp name="Argument.value">{"file_name": "batch_upload_${admin_batch_id}.csv"}</stringProp>
+                  <stringProp name="Argument.metadata">=</stringProp>
+                </elementProp>
+              </collectionProp>
+            </elementProp>
+          </HTTPSamplerProxy>
+          <hashTree>
+            <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager"
+                           testname="Content-Type JSON" enabled="true">
+              <collectionProp name="HeaderManager.headers">
+                <elementProp name="" elementType="Header">
+                  <stringProp name="Header.name">Content-Type</stringProp>
+                  <stringProp name="Header.value">application/json</stringProp>
+                </elementProp>
+              </collectionProp>
+            </HeaderManager>
+            <hashTree/>
+            <JSONPathExtractor guiclass="JSONPathExtractorGui" testclass="JSONPathExtractor"
+                               testname="Extract admin upload_url" enabled="true">
+              <stringProp name="JSONPathExtractor.referenceName">admin_upload_url</stringProp>
+              <stringProp name="JSONPathExtractor.jsonPathExpr">$.upload_url</stringProp>
+              <stringProp name="JSONPathExtractor.defaultValue">ADMIN_PRESIGN_FAILED</stringProp>
+            </JSONPathExtractor>
+            <hashTree/>
+            <JSONPathExtractor guiclass="JSONPathExtractorGui" testclass="JSONPathExtractor"
+                               testname="Extract admin object_key" enabled="true">
+              <stringProp name="JSONPathExtractor.referenceName">admin_object_key</stringProp>
+              <stringProp name="JSONPathExtractor.jsonPathExpr">$.object_key</stringProp>
+              <stringProp name="JSONPathExtractor.defaultValue">ADMIN_KEY_FAILED</stringProp>
+            </JSONPathExtractor>
+            <hashTree/>
+            <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion"
+                               testname="Assert 200 OK" enabled="true">
+              <collectionProp name="Assertion.test_strings">
+                <stringProp name="0">200</stringProp>
+              </collectionProp>
+              <intProp name="Assertion.test_type">8</intProp>
+              <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+            </ResponseAssertion>
+            <hashTree/>
+            <DurationAssertion guiclass="DurationAssertionGui" testclass="DurationAssertion"
+                               testname="Response Time &lt; 300ms" enabled="true">
+              <longProp name="DurationAssertion.duration">300</longProp>
+            </DurationAssertion>
+            <hashTree/>
+          </hashTree>
+
+          <GaussianRandomTimer guiclass="GaussianRandomTimerGui" testclass="GaussianRandomTimer"
+                               testname="Admin Think Time" enabled="true">
+            <stringProp name="ConstantTimer.delay">2000</stringProp>
+            <stringProp name="RandomTimer.range">1000</stringProp>
+          </GaussianRandomTimer>
+          <hashTree/>
+        </hashTree><!-- /S11 admin presign -->
+
+        <!-- S12: Admin Cluster Upload -->
+        <TransactionController guiclass="TransactionControllerGui"
+                               testclass="TransactionController"
+                               testname="S12 — Admin Cluster Upload" enabled="true">
+          <boolProp name="TransactionController.includeTimers">false</boolProp>
+        </TransactionController>
+        <hashTree>
+          <IfController guiclass="IfControllerPanel" testclass="IfController"
+                        testname="Only if admin presign succeeded" enabled="true">
+            <stringProp name="IfController.condition">"${admin_upload_url}" != "ADMIN_PRESIGN_FAILED"</stringProp>
+            <boolProp name="IfController.evaluateAll">false</boolProp>
+          </IfController>
+          <hashTree>
+            <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy"
+                              testname="POST /admin/cluster/upload" enabled="true">
+              <stringProp name="HTTPSampler.path">/admin/cluster/upload</stringProp>
+              <stringProp name="HTTPSampler.method">POST</stringProp>
+              <boolProp name="HTTPSampler.DO_MULTIPART_POST">true</boolProp>
+              <elementProp name="HTTPsampler.Arguments" elementType="Arguments">
+                <collectionProp name="Arguments.arguments">
+                  <elementProp name="upload_url" elementType="HTTPArgument">
+                    <stringProp name="Argument.name">upload_url</stringProp>
+                    <stringProp name="Argument.value">${admin_upload_url}</stringProp>
+                    <stringProp name="Argument.metadata">=</stringProp>
+                  </elementProp>
+                  <elementProp name="object_key" elementType="HTTPArgument">
+                    <stringProp name="Argument.name">object_key</stringProp>
+                    <stringProp name="Argument.value">${admin_object_key}</stringProp>
+                    <stringProp name="Argument.metadata">=</stringProp>
+                  </elementProp>
+                </collectionProp>
+              </elementProp>
+              <stringProp name="HTTPSampler.FILES_PARAMS">
+                testdata/cluster_data_sample.csv|file|text/csv
+              </stringProp>
+            </HTTPSamplerProxy>
+            <hashTree>
+              <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion"
+                                 testname="Assert 200 OK" enabled="true">
+                <collectionProp name="Assertion.test_strings">
+                  <stringProp name="0">200</stringProp>
+                </collectionProp>
+                <intProp name="Assertion.test_type">8</intProp>
+                <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+              </ResponseAssertion>
+              <hashTree/>
+              <DurationAssertion guiclass="DurationAssertionGui" testclass="DurationAssertion"
+                                 testname="Response Time &lt; 900ms" enabled="true">
+                <longProp name="DurationAssertion.duration">900</longProp>
+              </DurationAssertion>
+              <hashTree/>
+            </hashTree>
+          </hashTree>
+
+          <GaussianRandomTimer guiclass="GaussianRandomTimerGui" testclass="GaussianRandomTimer"
+                               testname="Admin Think Time" enabled="true">
+            <stringProp name="ConstantTimer.delay">2000</stringProp>
+            <stringProp name="RandomTimer.range">1000</stringProp>
+          </GaussianRandomTimer>
+          <hashTree/>
+        </hashTree><!-- /S12 admin upload -->
+
+        <!-- S13: Admin Cluster Extract -->
+        <TransactionController guiclass="TransactionControllerGui"
+                               testclass="TransactionController"
+                               testname="S13 — Admin Cluster Extract" enabled="true">
+          <boolProp name="TransactionController.includeTimers">false</boolProp>
+        </TransactionController>
+        <hashTree>
+          <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy"
+                            testname="POST /admin/cluster/extract" enabled="true">
+            <stringProp name="HTTPSampler.path">/admin/cluster/extract</stringProp>
+            <stringProp name="HTTPSampler.method">POST</stringProp>
+            <boolProp name="HTTPSampler.postBodyRaw">true</boolProp>
+            <elementProp name="HTTPsampler.Arguments" elementType="Arguments">
+              <collectionProp name="Arguments.arguments">
+                <elementProp name="" elementType="HTTPArgument">
+                  <stringProp name="Argument.value">{"object_key": "${admin_object_key}"}</stringProp>
+                  <stringProp name="Argument.metadata">=</stringProp>
+                </elementProp>
+              </collectionProp>
+            </elementProp>
+          </HTTPSamplerProxy>
+          <hashTree>
+            <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager"
+                           testname="Content-Type JSON" enabled="true">
+              <collectionProp name="HeaderManager.headers">
+                <elementProp name="" elementType="Header">
+                  <stringProp name="Header.name">Content-Type</stringProp>
+                  <stringProp name="Header.value">application/json</stringProp>
+                </elementProp>
+              </collectionProp>
+            </HeaderManager>
+            <hashTree/>
+            <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion"
+                               testname="Assert 200 OK" enabled="true">
+              <collectionProp name="Assertion.test_strings">
+                <stringProp name="0">200</stringProp>
+              </collectionProp>
+              <intProp name="Assertion.test_type">8</intProp>
+              <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+            </ResponseAssertion>
+            <hashTree/>
+            <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion"
+                               testname="Assert queued in body" enabled="true">
+              <collectionProp name="Assertion.test_strings">
+                <stringProp name="0">queue</stringProp>
+              </collectionProp>
+              <intProp name="Assertion.test_type">2</intProp>
+              <stringProp name="Assertion.test_field">Assertion.response_data</stringProp>
+            </ResponseAssertion>
+            <hashTree/>
+            <DurationAssertion guiclass="DurationAssertionGui" testclass="DurationAssertion"
+                               testname="Response Time &lt; 500ms" enabled="true">
+              <longProp name="DurationAssertion.duration">500</longProp>
+            </DurationAssertion>
+            <hashTree/>
+          </hashTree>
+
+          <GaussianRandomTimer guiclass="GaussianRandomTimerGui" testclass="GaussianRandomTimer"
+                               testname="Admin Think Time" enabled="true">
+            <stringProp name="ConstantTimer.delay">5000</stringProp>
+            <stringProp name="RandomTimer.range">3000</stringProp>
+          </GaussianRandomTimer>
+          <hashTree/>
+        </hashTree><!-- /S13 admin extract -->
+
+      </hashTree><!-- /TG2 admin workflow -->
+
+
+      <!-- ═══════════════════════════════════════════════════
+           THREAD GROUP 3 — NEGATIVE / BOUNDARY TESTS
+      ═══════════════════════════════════════════════════════ -->
+      <ThreadGroup guiclass="ThreadGroupGui" testclass="ThreadGroup"
+                   testname="TG3 — Negative &amp; Boundary Tests" enabled="true">
+        <stringProp name="ThreadGroup.on_sample_error">continue</stringProp>
+        <elementProp name="ThreadGroup.main_controller" elementType="LoopController">
+          <boolProp name="LoopController.continue_forever">false</boolProp>
+          <intProp name="LoopController.loops">-1</intProp>
+        </elementProp>
+        <stringProp name="ThreadGroup.num_threads">3</stringProp>
+        <stringProp name="ThreadGroup.ramp_time">30</stringProp>
+        <boolProp name="ThreadGroup.scheduler">true</boolProp>
+        <stringProp name="ThreadGroup.duration">${duration}</stringProp>
+      </ThreadGroup>
+      <hashTree>
+
+        <!-- NEG1: Invalid file type for activity presign -->
+        <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy"
+                          testname="NEG — Presign Invalid File Type (.doc)" enabled="true">
+          <stringProp name="HTTPSampler.path">/activity/presign</stringProp>
+          <stringProp name="HTTPSampler.method">POST</stringProp>
+          <boolProp name="HTTPSampler.postBodyRaw">true</boolProp>
+          <elementProp name="HTTPsampler.Arguments" elementType="Arguments">
+            <collectionProp name="Arguments.arguments">
+              <elementProp name="" elementType="HTTPArgument">
+                <stringProp name="Argument.value">{"file_name": "hack.doc"}</stringProp>
+                <stringProp name="Argument.metadata">=</stringProp>
+              </elementProp>
+            </collectionProp>
+          </elementProp>
+        </HTTPSamplerProxy>
+        <hashTree>
+          <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager"
+                         testname="Content-Type JSON" enabled="true">
+            <collectionProp name="HeaderManager.headers">
+              <elementProp name="" elementType="Header">
+                <stringProp name="Header.name">Content-Type</stringProp>
+                <stringProp name="Header.value">application/json</stringProp>
+              </elementProp>
+            </collectionProp>
+          </HeaderManager>
+          <hashTree/>
+          <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion"
+                             testname="Assert 400 Bad Request" enabled="true">
+            <collectionProp name="Assertion.test_strings">
+              <stringProp name="0">400</stringProp>
+            </collectionProp>
+            <intProp name="Assertion.test_type">8</intProp>
+            <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+          </ResponseAssertion>
+          <hashTree/>
+          <DurationAssertion guiclass="DurationAssertionGui" testclass="DurationAssertion"
+                             testname="Fast rejection &lt; 200ms" enabled="true">
+            <longProp name="DurationAssertion.duration">200</longProp>
+          </DurationAssertion>
+          <hashTree/>
+          <ConstantTimer guiclass="ConstantTimerGui" testclass="ConstantTimer"
+                         testname="Pause 5s" enabled="true">
+            <stringProp name="ConstantTimer.delay">5000</stringProp>
+          </ConstantTimer>
+          <hashTree/>
+        </hashTree>
+
+        <!-- NEG2: Missing required field -->
+        <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy"
+                          testname="NEG — Quiz Generate Missing assessment_id" enabled="true">
+          <stringProp name="HTTPSampler.path">/user/quiz-generate</stringProp>
+          <stringProp name="HTTPSampler.method">POST</stringProp>
+          <boolProp name="HTTPSampler.postBodyRaw">true</boolProp>
+          <elementProp name="HTTPsampler.Arguments" elementType="Arguments">
+            <collectionProp name="Arguments.arguments">
+              <elementProp name="" elementType="HTTPArgument">
+                <stringProp name="Argument.value">{}</stringProp>
+                <stringProp name="Argument.metadata">=</stringProp>
+              </elementProp>
+            </collectionProp>
+          </elementProp>
+        </HTTPSamplerProxy>
+        <hashTree>
+          <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager"
+                         testname="Content-Type JSON" enabled="true">
+            <collectionProp name="HeaderManager.headers">
+              <elementProp name="" elementType="Header">
+                <stringProp name="Header.name">Content-Type</stringProp>
+                <stringProp name="Header.value">application/json</stringProp>
+              </elementProp>
+            </collectionProp>
+          </HeaderManager>
+          <hashTree/>
+          <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion"
+                             testname="Assert 400 Bad Request" enabled="true">
+            <collectionProp name="Assertion.test_strings">
+              <stringProp name="0">400</stringProp>
+            </collectionProp>
+            <intProp name="Assertion.test_type">8</intProp>
+            <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+          </ResponseAssertion>
+          <hashTree/>
+          <ConstantTimer guiclass="ConstantTimerGui" testclass="ConstantTimer"
+                         testname="Pause 8s" enabled="true">
+            <stringProp name="ConstantTimer.delay">8000</stringProp>
+          </ConstantTimer>
+          <hashTree/>
+        </hashTree>
+
+        <!-- NEG3: Admin cluster extract — non-existent file -->
+        <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy"
+                          testname="NEG — Admin Extract File Not Found" enabled="true">
+          <stringProp name="HTTPSampler.path">/admin/cluster/extract</stringProp>
+          <stringProp name="HTTPSampler.method">POST</stringProp>
+          <boolProp name="HTTPSampler.postBodyRaw">true</boolProp>
+          <elementProp name="HTTPsampler.Arguments" elementType="Arguments">
+            <collectionProp name="Arguments.arguments">
+              <elementProp name="" elementType="HTTPArgument">
+                <stringProp name="Argument.value">{"object_key": "admin-cluster/ghost_file_that_does_not_exist.csv"}</stringProp>
+                <stringProp name="Argument.metadata">=</stringProp>
+              </elementProp>
+            </collectionProp>
+          </elementProp>
+        </HTTPSamplerProxy>
+        <hashTree>
+          <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager"
+                         testname="Content-Type JSON" enabled="true">
+            <collectionProp name="HeaderManager.headers">
+              <elementProp name="" elementType="Header">
+                <stringProp name="Header.name">Content-Type</stringProp>
+                <stringProp name="Header.value">application/json</stringProp>
+              </elementProp>
+            </collectionProp>
+          </HeaderManager>
+          <hashTree/>
+          <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion"
+                             testname="Assert 404 Not Found" enabled="true">
+            <collectionProp name="Assertion.test_strings">
+              <stringProp name="0">404</stringProp>
+            </collectionProp>
+            <intProp name="Assertion.test_type">8</intProp>
+            <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+          </ResponseAssertion>
+          <hashTree/>
+          <ConstantTimer guiclass="ConstantTimerGui" testclass="ConstantTimer"
+                         testname="Pause 10s" enabled="true">
+            <stringProp name="ConstantTimer.delay">10000</stringProp>
+          </ConstantTimer>
+          <hashTree/>
+        </hashTree>
+
+      </hashTree><!-- /TG3 negative tests -->
+
+
+      <!-- ═══════════════════════════════════════════════════
+           LISTENERS & REPORTING
+      ═══════════════════════════════════════════════════════ -->
+
+      <!-- Raw results file — feeds HTML report generator -->
+      <ResultCollector guiclass="SimpleDataWriter" testclass="ResultCollector"
+                       testname="Results File Writer" enabled="true">
+        <boolProp name="ResultCollector.error_logging">false</boolProp>
+        <objProp>
+          <name>saveConfig</name>
+          <value class="SampleSaveConfiguration">
+            <time>true</time>
+            <latency>true</latency>
+            <timestamp>true</timestamp>
+            <success>true</success>
+            <label>true</label>
+            <code>true</code>
+            <message>true</message>
+            <threadName>true</threadName>
+            <dataType>true</dataType>
+            <encoding>false</encoding>
+            <assertions>true</assertions>
+            <subresults>true</subresults>
+            <responseData>false</responseData>
+            <samplerData>false</samplerData>
+            <xml>false</xml>
+            <fieldNames>true</fieldNames>
+            <responseHeaders>false</responseHeaders>
+            <requestHeaders>false</requestHeaders>
+            <responseDataOnError>true</responseDataOnError>
+            <saveAssertionResultsFailureMessage>true</saveAssertionResultsFailureMessage>
+            <bytes>true</bytes>
+            <sentBytes>true</sentBytes>
+            <url>true</url>
+            <threadCounts>true</threadCounts>
+            <sampleCount>true</sampleCount>
+            <idleTime>true</idleTime>
+            <connectTime>true</connectTime>
+          </value>
+        </objProp>
+        <stringProp name="filename">results/results.jtl</stringProp>
+      </ResultCollector>
+      <hashTree/>
+
+      <!-- Summary Report (CLI-friendly) -->
+      <ResultCollector guiclass="SummaryReport" testclass="ResultCollector"
+                       testname="Summary Report" enabled="true">
+        <boolProp name="ResultCollector.error_logging">false</boolProp>
+        <objProp>
+          <name>saveConfig</name>
+          <value class="SampleSaveConfiguration">
+            <time>true</time>
+            <latency>true</latency>
+            <timestamp>true</timestamp>
+            <success>true</success>
+            <label>true</label>
+            <code>true</code>
+          </value>
+        </objProp>
+        <stringProp name="filename">results/summary_report.jtl</stringProp>
+      </ResultCollector>
+      <hashTree/>
+
+      <!-- Errors-only log -->
+      <ResultCollector guiclass="SimpleDataWriter" testclass="ResultCollector"
+                       testname="Error Results Writer" enabled="true">
+        <boolProp name="ResultCollector.error_logging">true</boolProp>
+        <objProp>
+          <name>saveConfig</name>
+          <value class="SampleSaveConfiguration">
+            <time>true</time>
+            <latency>true</latency>
+            <timestamp>true</timestamp>
+            <success>true</success>
+            <label>true</label>
+            <code>true</code>
+            <message>true</message>
+            <responseDataOnError>true</responseDataOnError>
+          </value>
+        </objProp>
+        <stringProp name="filename">results/errors.jtl</stringProp>
+      </ResultCollector>
+      <hashTree/>
+
+    </hashTree><!-- /TestPlan hashTree -->
+  </hashTree><!-- /jmeterTestPlan hashTree -->
+</jmeterTestPlan>
