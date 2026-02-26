@@ -131,6 +131,7 @@ function buildThresholds(p95, p99, errPct) {
     'admin_presign_duration':          [`p(95)<300`],
     'admin_upload_duration':           [`p(95)<900`],
     'admin_extract_duration':          [`p(95)<500`],
+    'dash_recommend_duration':         [`p(95)<500`],
     'errors_4xx':                      ['count<10'],
     'errors_5xx':                      ['count<5'],
   };
@@ -162,6 +163,7 @@ const simEvalDuration           = new Trend('simulation_evaluation_duration', tr
 const imagePresignDuration      = new Trend('image_presign_duration',     true);
 const imageUploadDuration       = new Trend('image_upload_duration',      true);
 const adminPresignDuration      = new Trend('admin_presign_duration',     true);
+const dashRecommendDuration     = new Trend('dash_recommend_duration',     true);
 const adminUploadDuration       = new Trend('admin_upload_duration',      true);
 const adminExtractDuration      = new Trend('admin_extract_duration',     true);
 
@@ -252,7 +254,10 @@ function vuId() {
 //  STAGE 1: ACTIVITY PRESIGN + UPLOAD + EXTRACT
 // ─────────────────────────────────────────────────────────────
 function stageActivityUpload() {
-  let objectKey = null;
+  let objectKey  = null;
+  let uploadUrl  = null;
+  // Shared assessmentId flows through Stage 2 & 3 for realistic user journey
+  const assessmentId = vuId();
 
   group('S1.1 Activity Presign', () => {
     const fileNames = ['resume.pdf', 'cv.pdf', 'portfolio.docx', 'experience.pdf', 'skills.docx'];
@@ -274,11 +279,14 @@ function stageActivityUpload() {
     });
 
     if (ok) {
-      objectKey = parseJson(res).object_key;
+      const body = parseJson(res);
+      objectKey = body.object_key;
+      // API SPEC: capture real presigned upload_url returned by /activity/presign
+      uploadUrl = body.upload_url;
     }
   });
 
-  // Negative test: invalid file type (runs on every 20th VU iteration)
+  // Negative test: invalid file type — spec returns 400 for unsupported extensions
   if (__ITER % 20 === 0) {
     group('S1.1-NEG Activity Presign Invalid Type', () => {
       const res = apiPost(
@@ -301,18 +309,16 @@ function stageActivityUpload() {
   group('S1.2 Activity Upload', () => {
     if (!objectKey) return;
 
-    const fileOptions  = [
+    const fileOptions = [
       { content: PDF_STUB_SMALL,  mime: 'application/pdf',       name: 'resume.pdf'  },
       { content: PDF_STUB_MED,    mime: 'application/pdf',       name: 'cv.pdf'      },
       { content: DOCX_STUB,       mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', name: 'skills.docx' },
     ];
     const chosen = randomItem(fileOptions);
 
-    // Simulate a presigned S3 upload URL (in real tests this comes from presign response)
-    const fakeUploadUrl = `${BASE_URL}/activity/upload`;
-
     const formData = {
-      upload_url: 'https://test-bucket.s3.amazonaws.com/presigned-url-placeholder',
+      // API SPEC: upload_url and object_key come from /activity/presign response
+      upload_url: uploadUrl || `${BASE_URL}/activity/upload`,
       object_key: objectKey,
       file:       http.file(chosen.content, chosen.name, chosen.mime),
     };
@@ -327,6 +333,8 @@ function stageActivityUpload() {
 
     check(res, {
       '[Upload] status is 200':           (r) => r.status === 200,
+      // API SPEC: response contains view_url and object_key
+      '[Upload] has view_url':            (r) => { const b = parseJson(r); return b.view_url !== undefined; },
       '[Upload] has object_key':          (r) => { const b = parseJson(r); return b.object_key !== undefined; },
       '[Upload] response time < 800ms':   (r) => r.timings.duration < 800,
     });
@@ -341,8 +349,9 @@ function stageActivityUpload() {
     const res = apiPost(
       `${BASE_URL}/extract`,
       JSON.stringify({
-        assessment_id: vuId(),
-        object_key:    objectKey || `user-activities/${vuId()}_resume.pdf`,
+        // API SPEC: assessment_id must be integer
+        assessment_id: assessmentId,
+        object_key:    objectKey,
       }),
       { headers: getHeaders() },
       extractDuration,
@@ -352,18 +361,24 @@ function stageActivityUpload() {
     check(res, {
       '[Extract] status is 200':          (r) => r.status === 200,
       '[Extract] queued message':         (r) => { const b = parseJson(r); return (b.message || '').toLowerCase().includes('queue'); },
+      // API SPEC: response echoes back assessment_id
+      '[Extract] has assessment_id':      (r) => { const b = parseJson(r); return b.assessment_id !== undefined; },
       '[Extract] response time < 500ms':  (r) => r.timings.duration < 500,
     });
   });
 
   sleep(randomIntBetween(1, 3));
+
+  // Return assessmentId so Stages 2 & 3 can share the same user context
+  return { assessmentId };
 }
 
 // ─────────────────────────────────────────────────────────────
 //  STAGE 2: QUIZ GENERATE + INIT RECOMMEND
 // ─────────────────────────────────────────────────────────────
-function stageUserAssessment() {
-  const assessmentId = vuId();
+// API SPEC: accepts shared assessmentId from Stage 1
+function stageUserAssessment(assessmentId) {
+  assessmentId = assessmentId || vuId();
 
   group('S2.1 Quiz Generate', () => {
     const res = apiPost(
@@ -418,14 +433,18 @@ function stageUserAssessment() {
 // ─────────────────────────────────────────────────────────────
 //  STAGE 3: SIMULATION CREATE → EVALUATE → REVISE RECOMMEND
 // ─────────────────────────────────────────────────────────────
-function stageSimulation() {
-  const assessmentId  = vuId();
+// API SPEC: accepts shared assessmentId from Stage 1
+function stageSimulation(assessmentId) {
+  assessmentId        = assessmentId || vuId();
   const clusterId     = randomIntBetween(100, 999);
   let   simulationId  = null;
+  // API SPEC: user_id needed for /user/dash-recommend
+  const userId        = randomIntBetween(1000, 9999);
 
   group('S3.1 Simulation Create', () => {
     const res = apiPost(
       `${BASE_URL}/user/simulation-create`,
+      // API SPEC: requires assessment_id (integer) + cluster_id (integer)
       JSON.stringify({ assessment_id: assessmentId, cluster_id: clusterId }),
       { headers: getHeaders() },
       simCreateDuration,
@@ -437,9 +456,9 @@ function stageSimulation() {
       '[SimCreate] response time < 500ms':  (r) => r.timings.duration < 500,
     });
 
-    // Extract simulation_id if returned; otherwise synthesise one
-    const body = parseJson(res);
-    simulationId = body.simulation_id || randomIntBetween(5000, 9999);
+    // API SPEC: simulation-create response only has status_code + message (no simulation_id)
+    // simulation_id is tracked internally by backend — we use a realistic generated ID
+    simulationId = randomIntBetween(5000, 9999);
   });
 
   sleep(randomIntBetween(2, 4));
@@ -447,10 +466,11 @@ function stageSimulation() {
   group('S3.2 Simulation Evaluation', () => {
     const res = apiPost(
       `${BASE_URL}/user/simulation-evaluation`,
+      // API SPEC: requires assessment_id + simulation_id + cluster_id (all integers)
       JSON.stringify({
-        assessment_id:  assessmentId,
-        simulation_id:  simulationId || randomIntBetween(5000, 9999),
-        cluster_id:     clusterId,
+        assessment_id: assessmentId,
+        simulation_id: simulationId,
+        cluster_id:    clusterId,
       }),
       { headers: getHeaders() },
       simEvalDuration,
@@ -462,7 +482,7 @@ function stageSimulation() {
       '[SimEval] response time < 500ms':  (r) => r.timings.duration < 500,
     });
 
-    // Negative: missing simulation_id
+    // Negative: missing simulation_id — spec returns 400
     if (__ITER % 30 === 0) {
       const negRes = apiPost(
         `${BASE_URL}/user/simulation-evaluation`,
@@ -489,6 +509,7 @@ function stageSimulation() {
 
     const res = apiPost(
       `${BASE_URL}/user/revise-recommend`,
+      // API SPEC: requires assessment_id (integer) + revise_reason (string)
       JSON.stringify({
         assessment_id: assessmentId,
         revise_reason: randomItem(reviseReasons),
@@ -502,6 +523,42 @@ function stageSimulation() {
       '[ReviseRec] status is 200':          (r) => r.status === 200,
       '[ReviseRec] response time < 500ms':  (r) => r.timings.duration < 500,
     });
+  });
+
+  sleep(randomIntBetween(1, 2));
+
+  // API SPEC: /user/dash-recommend — IN SPEC but was MISSING from script
+  // Requires assessment_id (integer) + user_id (string)
+  group('S3.4 Dashboard Recommend', () => {
+    const res = apiPost(
+      `${BASE_URL}/user/dash-recommend`,
+      JSON.stringify({
+        assessment_id: assessmentId,
+        user_id:       String(userId),
+      }),
+      { headers: getHeaders() },
+      dashRecommendDuration,
+      'dash-recommend'
+    );
+
+    check(res, {
+      '[DashRec] status is 200':          (r) => r.status === 200,
+      '[DashRec] response time < 500ms':  (r) => r.timings.duration < 500,
+    });
+
+    // Negative: missing user_id — spec returns 400
+    if (__ITER % 25 === 0) {
+      const negRes = apiPost(
+        `${BASE_URL}/user/dash-recommend`,
+        JSON.stringify({ assessment_id: assessmentId }),
+        { headers: getHeaders() },
+        null,
+        'dash-recommend-neg'
+      );
+      check(negRes, {
+        '[DashRec-NEG] status is 400': (r) => r.status === 400,
+      });
+    }
   });
 
   sleep(randomIntBetween(1, 2));
@@ -554,7 +611,8 @@ function stageProfileImage() {
   group('S4.2 Image Upload', () => {
     const formData = {
       file:       http.file(JPEG_STUB, 'profile_pic.jpg', 'image/jpeg'),
-      user_id:    String(userId),
+      // API SPEC: user_id must be integer (not string)
+      user_id:    userId,
       object_key: imageObjectKey || `user-images/${Date.now()}_profile_pic.jpg`,
     };
 
@@ -581,6 +639,7 @@ function stageProfileImage() {
 // ─────────────────────────────────────────────────────────────
 function stageAdminCluster() {
   let clusterObjectKey = null;
+  let clusterUploadUrl = null;
 
   group('S5.1 Admin Cluster Presign', () => {
     const res = apiPost(
@@ -598,7 +657,10 @@ function stageAdminCluster() {
       '[AdminPresign] response time < 300ms':  (r) => r.timings.duration < 300,
     });
 
-    clusterObjectKey = parseJson(res).object_key;
+    const adminBody  = parseJson(res);
+    clusterObjectKey = adminBody.object_key;
+    // API SPEC: capture real upload_url from /admin/cluster/presign
+    clusterUploadUrl = adminBody.upload_url;
   });
 
   sleep(randomIntBetween(1, 2));
@@ -611,7 +673,8 @@ function stageAdminCluster() {
     const chosen = randomItem(csvOptions);
 
     const formData = {
-      upload_url: 'https://test-bucket.s3.amazonaws.com/presigned-url-placeholder',
+      // API SPEC: upload_url comes from /admin/cluster/presign response
+      upload_url: clusterUploadUrl || `${BASE_URL}/admin/cluster/upload`,
       object_key: clusterObjectKey || `admin-cluster/${Date.now()}_data.csv`,
       file:       http.file(chosen.content, chosen.name, 'text/csv'),
     };
@@ -626,6 +689,8 @@ function stageAdminCluster() {
 
     check(res, {
       '[AdminUpload] status is 200':          (r) => r.status === 200,
+      // API SPEC: response includes view_url and object_key
+      '[AdminUpload] has view_url':           (r) => { const b = parseJson(r); return b.view_url !== undefined; },
       '[AdminUpload] has object_key':         (r) => { const b = parseJson(r); return b.object_key !== undefined; },
       '[AdminUpload] response time < 900ms':  (r) => r.timings.duration < 900,
     });
@@ -680,7 +745,8 @@ function stageAdminCluster() {
         'admin-extract-neg'
       );
       check(negRes, {
-        '[AdminExtract-NEG] status is 404 or 400': (r) => r.status === 404 || r.status === 400,
+        // API SPEC: can return 400, 404, or 415 (Unsupported Media Type)
+        '[AdminExtract-NEG] status is 400/404/415': (r) => r.status === 400 || r.status === 404 || r.status === 415,
       });
     }
   });
@@ -733,9 +799,11 @@ export default function (data) {
   } else {
     // Full user E2E workflow
     group('USER E2E Workflow', () => {
-      stageActivityUpload();
-      stageUserAssessment();
-      stageSimulation();
+      // Thread shared assessmentId across all stages — same user journey
+      const stage1Result = stageActivityUpload();
+      const assessmentId = stage1Result ? stage1Result.assessmentId : vuId();
+      stageUserAssessment(assessmentId);
+      stageSimulation(assessmentId);
 
       // Profile image upload runs on ~30% of user iterations
       if (__ITER % 3 === 0) {
