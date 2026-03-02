@@ -18,7 +18,7 @@ grafana-k6/
 ## Step 1 — Start the Stack
 
 ```bash
-cd grafana-k6
+cd grafana-k6-fixed
 docker-compose up -d
 ```
 

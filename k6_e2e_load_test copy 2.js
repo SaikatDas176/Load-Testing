@@ -67,21 +67,6 @@ import { randomIntBetween, randomItem } from 'https://jslib.k6.io/k6-utils/1.4.0
 const BASE_URL  = __ENV.BASE_URL   || 'https://u3w2iq9qbd.execute-api.us-east-1.amazonaws.com';
 const PROFILE   = __ENV.K6_PROFILE || 'load';
 
-// ── Manual ID overrides (optional) ───────────────────────────
-//  Set these to pin a specific ID instead of auto-generating.
-//  Useful for debugging a known assessment, simulation, or cluster.
-//
-//  Usage examples:
-//    ASSESSMENT_ID=123456   k6 run k6_e2e_load_test.js
-//    SIMULATION_ID=99999    k6 run k6_e2e_load_test.js
-//    CLUSTER_ID=42          k6 run k6_e2e_load_test.js
-//    ASSESSMENT_ID=123456 SIMULATION_ID=99999 CLUSTER_ID=42 k6 run k6_e2e_load_test.js
-//
-//  When not set, each ID falls back to its original auto-generation logic.
-const MANUAL_ASSESSMENT_ID = __ENV.ASSESSMENT_ID ? parseInt(__ENV.ASSESSMENT_ID, 10) : null;
-const MANUAL_SIMULATION_ID = __ENV.SIMULATION_ID ? parseInt(__ENV.SIMULATION_ID, 10) : null;
-const MANUAL_CLUSTER_ID    = __ENV.CLUSTER_ID    ? parseInt(__ENV.CLUSTER_ID,    10) : null;
-
 // ─────────────────────────────────────────────────────────────
 //  TEST PROFILES
 // ─────────────────────────────────────────────────────────────
@@ -401,7 +386,7 @@ function safeJson(res) {
 //           Returns null on any hard failure to allow stage skipping.
 // ─────────────────────────────────────────────────────────────
 function stageActivityUpload() {
-  const assessmentId = MANUAL_ASSESSMENT_ID !== null ? MANUAL_ASSESSMENT_ID : vuUniqueId();
+  const assessmentId = vuUniqueId();
   let   objectKey    = null;
   let   uploadUrl    = null;
   let   presignOk    = false;
@@ -411,7 +396,7 @@ function stageActivityUpload() {
     // Only PDF presign — we only have Alex_Johnson_QA_Resume.pdf as real test data.
     // Sending different realistic PDF names exercises the presign filename routing
     // without needing multiple physical files.
-    const fileNames = ['Alex_Johnson_QA_Resume.pdf'];
+    const fileNames = ['Alex_Johnson_QA_Resume.pdf', 'resume.pdf', 'cv.pdf', 'portfolio.pdf', 'experience.pdf'];
     const fileName  = randomItem(fileNames);
 
     const res = apiPost(
@@ -692,10 +677,10 @@ function stageQuizAndRecommend(assessmentId) {
 // ─────────────────────────────────────────────────────────────
 function stageSimulation(assessmentId) {
   // Randomise cluster_id per VU iteration to spread realistic cluster load
-  const clusterId  = MANUAL_CLUSTER_ID    !== null ? MANUAL_CLUSTER_ID    : randomIntBetween(100, 999);
+  const clusterId  = randomIntBetween(100, 999);
   // Spec gap workaround: derive simulation_id from assessmentId
   // Update this if the API ever returns simulation_id from simulation-create.
-  const simulationId = MANUAL_SIMULATION_ID !== null ? MANUAL_SIMULATION_ID : assessmentId;
+  const simulationId = assessmentId;
   const userId     = formatUserId(assessmentId);  // "user_<id>" per spec example
 
   // ── 3.1 Simulation Create ──────────────────────────────────

@@ -67,21 +67,6 @@ import { randomIntBetween, randomItem } from 'https://jslib.k6.io/k6-utils/1.4.0
 const BASE_URL  = __ENV.BASE_URL   || 'https://u3w2iq9qbd.execute-api.us-east-1.amazonaws.com';
 const PROFILE   = __ENV.K6_PROFILE || 'load';
 
-// ── Manual ID overrides (optional) ───────────────────────────
-//  Set these to pin a specific ID instead of auto-generating.
-//  Useful for debugging a known assessment, simulation, or cluster.
-//
-//  Usage examples:
-//    ASSESSMENT_ID=123456   k6 run k6_e2e_load_test.js
-//    SIMULATION_ID=99999    k6 run k6_e2e_load_test.js
-//    CLUSTER_ID=42          k6 run k6_e2e_load_test.js
-//    ASSESSMENT_ID=123456 SIMULATION_ID=99999 CLUSTER_ID=42 k6 run k6_e2e_load_test.js
-//
-//  When not set, each ID falls back to its original auto-generation logic.
-const MANUAL_ASSESSMENT_ID = __ENV.ASSESSMENT_ID ? parseInt(__ENV.ASSESSMENT_ID, 10) : null;
-const MANUAL_SIMULATION_ID = __ENV.SIMULATION_ID ? parseInt(__ENV.SIMULATION_ID, 10) : null;
-const MANUAL_CLUSTER_ID    = __ENV.CLUSTER_ID    ? parseInt(__ENV.CLUSTER_ID,    10) : null;
-
 // ─────────────────────────────────────────────────────────────
 //  TEST PROFILES
 // ─────────────────────────────────────────────────────────────
@@ -215,17 +200,6 @@ const workflowCompletionRate       = new Rate('workflow_completion_rate');
 const activeWorkflows              = new Gauge('active_workflows');
 
 // ─────────────────────────────────────────────────────────────
-//  TRANSACTION LOG
-//  Collects full request + response details for every API call.
-//  Written to results/k6_transactions.json and embedded in the
-//  HTML report. Each VU maintains its own copy of this array.
-//  For multi-VU profiles, the report shows all captured entries
-//  from the VU that handleSummary shares context with (typically
-//  the last active VU). Smoke profile (1 VU) captures everything.
-// ─────────────────────────────────────────────────────────────
-const txnLog = [];
-
-// ─────────────────────────────────────────────────────────────
 //  TEST DATA
 //
 //  Real PDF binary loaded once at k6 init time via open().
@@ -296,82 +270,16 @@ function getMultipartHeaders() {
 /**
  * Central HTTP wrapper.
  * Records per-endpoint Trend metrics, increments error counters,
- * updates global success rate, logs full req/resp to console,
- * and pushes a structured entry into txnLog for the HTML report.
- *
- * @param {string}  url         - Full request URL
- * @param {*}       payload     - Request body (JSON string or FormData object)
- * @param {object}  params      - k6 request params (headers, tags, etc.)
- * @param {Trend}   trendMetric - Per-endpoint custom Trend metric (null for neg tests)
- * @param {string}  label       - Human-readable label for console and report
- * @param {boolean} isNegative  - True for intentional negative/error tests
+ * and updates the global success rate.
  */
-function apiPost(url, payload, params, trendMetric, label = '', isNegative = false) {
-  const ts = new Date().toISOString();
-
-  // Determine what to log as the request body
-  // FormData (multipart) payloads are binary — log a placeholder
-  const isFormData  = payload !== null && typeof payload === 'object' && !(typeof payload === 'string');
-  const reqBodyLog  = isFormData
-    ? '[multipart/form-data — binary file payload]'
-    : (typeof payload === 'string' ? payload : JSON.stringify(payload));
-
+function apiPost(url, payload, params, trendMetric) {
   const res = http.post(url, payload, params);
 
-  // ── Metric recording ────────────────────────────────────────
-  if (trendMetric)                           trendMetric.add(res.timings.duration);
+  if (trendMetric)          trendMetric.add(res.timings.duration);
   if (res.status >= 400 && res.status < 500) errors4xx.add(1);
-  if (res.status >= 500)                     errors5xx.add(1);
+  if (res.status >= 500)    errors5xx.add(1);
+
   successRate.add(res.status >= 200 && res.status < 300);
-
-  // ── Response body — truncate binary or very long responses ──
-  let resBodyLog = '';
-  if (res.body) {
-    resBodyLog = res.body.length > 500
-      ? res.body.substring(0, 500) + '... [truncated]'
-      : res.body;
-  } else {
-    resBodyLog = '[empty body]';
-  }
-
-  // ── Determine pass/fail for logging ─────────────────────────
-  const ok = res.status >= 200 && res.status < 300;
-  const statusIcon = ok ? '✓' : '✗';
-
-  // ── Console log — printed live during test run ───────────────
-  const path = url.replace(BASE_URL, '');
-  console.log(
-    `[${ts}] ${statusIcon} ${isNegative ? '[NEG] ' : ''}${label || path}`
-    + ` | VU=${__VU} ITER=${__ITER}`
-    + ` | POST ${path}`
-    + ` | STATUS=${res.status}`
-    + ` | ${res.timings.duration.toFixed(0)}ms`
-    + `\n  REQ : ${reqBodyLog}`
-    + `\n  RES : ${resBodyLog}`
-  );
-
-  // ── txnLog entry — embedded in HTML report ───────────────────
-  txnLog.push({
-    ts,
-    vu:         __VU,
-    iter:       __ITER,
-    label:      label || path,
-    method:     'POST',
-    url,
-    path,
-    reqBody:    reqBodyLog,
-    resStatus:  res.status,
-    resBody:    resBodyLog,
-    duration:   parseFloat(res.timings.duration.toFixed(2)),
-    blocked:    parseFloat(res.timings.blocked.toFixed(2)),
-    connecting: parseFloat(res.timings.connecting.toFixed(2)),
-    sending:    parseFloat(res.timings.sending.toFixed(2)),
-    waiting:    parseFloat(res.timings.waiting.toFixed(2)),
-    receiving:  parseFloat(res.timings.receiving.toFixed(2)),
-    ok,
-    isNegative,
-  });
-
   return res;
 }
 
@@ -401,7 +309,7 @@ function safeJson(res) {
 //           Returns null on any hard failure to allow stage skipping.
 // ─────────────────────────────────────────────────────────────
 function stageActivityUpload() {
-  const assessmentId = MANUAL_ASSESSMENT_ID !== null ? MANUAL_ASSESSMENT_ID : vuUniqueId();
+  const assessmentId = vuUniqueId();
   let   objectKey    = null;
   let   uploadUrl    = null;
   let   presignOk    = false;
@@ -411,45 +319,28 @@ function stageActivityUpload() {
     // Only PDF presign — we only have Alex_Johnson_QA_Resume.pdf as real test data.
     // Sending different realistic PDF names exercises the presign filename routing
     // without needing multiple physical files.
-    const fileNames = ['Alex_Johnson_QA_Resume.pdf'];
+    const fileNames = ['Alex_Johnson_QA_Resume.pdf', 'resume.pdf', 'cv.pdf', 'portfolio.pdf', 'experience.pdf'];
     const fileName  = randomItem(fileNames);
 
     const res = apiPost(
       `${BASE_URL}/activity/presign`,
       JSON.stringify({ file_name: fileName }),
       { headers: getJsonHeaders() },
-      activityPresignDuration, 'Activity Presign'
+      activityPresignDuration
     );
 
     const body = safeJson(res);
 
-    // Functional check — determines if workflow continues.
-    // Timing is asserted separately so a slow-but-valid response
-    // does NOT abort the workflow. Timing failures show in the
-    // threshold report and HTML report without killing the run.
     presignOk = check(res, {
-      '[Presign] HTTP 200':       (r) => r.status === 200,
-      '[Presign] has upload_url': (r) => typeof body.upload_url === 'string' && body.upload_url.length > 0,
-      '[Presign] has object_key': (r) => typeof body.object_key === 'string' && body.object_key.length > 0,
-    });
-
-    // Timing assertion — non-blocking, recorded for SLA reporting only
-    check(res, {
-      '[Presign] response time < 300ms': (r) => r.timings.duration < 300,
+      '[Presign] HTTP 200':               (r) => r.status === 200,
+      '[Presign] has upload_url':         (r) => typeof body.upload_url === 'string' && body.upload_url.length > 0,
+      '[Presign] has object_key':         (r) => typeof body.object_key === 'string' && body.object_key.length > 0,
+      '[Presign] response time < 300ms':  (r) => r.timings.duration < 300,
     });
 
     if (presignOk) {
       uploadUrl = body.upload_url;
       objectKey = body.object_key;
-    } else {
-      // Log full response detail so we can diagnose the failure
-      console.error(`[PRESIGN FAIL] VU=${__VU} ITER=${__ITER}`
-        + ` | status=${res.status}`
-        + ` | duration=${res.timings.duration.toFixed(0)}ms`
-        + ` | body=${res.body ? res.body.substring(0, 300) : 'empty'}`
-        + ` | file_name=${fileName}`
-        + ` | url=${BASE_URL}/activity/presign`
-      );
     }
   });
 
@@ -461,7 +352,7 @@ function stageActivityUpload() {
         `${BASE_URL}/activity/presign`,
         JSON.stringify({ file_name: 'malicious.exe' }),
         { headers: getJsonHeaders() },
-        null, 'Activity Presign (NEG: .exe)', true
+        null  // do not record timing for negative tests in trend
       );
       check(res, {
         '[Presign-NEG] HTTP 400 for .exe':    (r) => r.status === 400,
@@ -477,7 +368,7 @@ function stageActivityUpload() {
         `${BASE_URL}/activity/presign`,
         JSON.stringify({}),
         { headers: getJsonHeaders() },
-        null, 'Activity Presign (NEG: no file_name)', true
+        null
       );
       check(res, {
         '[Presign-NEG] HTTP 400 missing field': (r) => r.status === 400,
@@ -518,19 +409,16 @@ function stageActivityUpload() {
       `${BASE_URL}/activity/upload`,
       formData,
       { headers: getMultipartHeaders() },
-      activityUploadDuration, 'Activity Upload'
+      activityUploadDuration
     );
 
     const body = safeJson(res);
 
     uploadOk = check(res, {
-      '[Upload] HTTP 200':       (r) => r.status === 200,
-      '[Upload] has view_url':   (r) => typeof body.view_url === 'string',
-      '[Upload] has object_key': (r) => typeof body.object_key === 'string',
-    });
-
-    check(res, {
-      '[Upload] response time < 800ms': (r) => r.timings.duration < 800,
+      '[Upload] HTTP 200':               (r) => r.status === 200,
+      '[Upload] has view_url':           (r) => typeof body.view_url === 'string',
+      '[Upload] has object_key':         (r) => typeof body.object_key === 'string',
+      '[Upload] response time < 800ms':  (r) => r.timings.duration < 800,
     });
 
     // Capture object_key from response (backend may normalise it)
@@ -542,10 +430,7 @@ function stageActivityUpload() {
   sleep(randomIntBetween(1, 2));
 
   if (!uploadOk) {
-    console.error(`[UPLOAD FAIL] VU=${__VU} ITER=${__ITER}`
-      + ` | status=${res ? res.status : 'no_response'}`
-      + ` | body=${res && res.body ? res.body.substring(0, 300) : 'empty'}`
-    );
+    console.warn(`[VU ${__VU} ITER ${__ITER}] Upload failed — skipping extract`);
     return null;
   }
 
@@ -560,19 +445,16 @@ function stageActivityUpload() {
         object_key:    objectKey,
       }),
       { headers: getJsonHeaders() },
-      extractDuration, 'AI Extract'
+      extractDuration
     );
 
     const body = safeJson(res);
 
     check(res, {
-      '[Extract] HTTP 200':             (r) => r.status === 200,
-      '[Extract] body confirms queued': (r) => typeof body.message === 'string' && body.message.toLowerCase().includes('queue'),
-      '[Extract] echoes assessment_id': (r) => body.assessment_id !== undefined,
-    });
-
-    check(res, {
-      '[Extract] response time < 500ms': (r) => r.timings.duration < 500,
+      '[Extract] HTTP 200':               (r) => r.status === 200,
+      '[Extract] body confirms queued':   (r) => typeof body.message === 'string' && body.message.toLowerCase().includes('queue'),
+      '[Extract] echoes assessment_id':   (r) => body.assessment_id !== undefined,
+      '[Extract] response time < 500ms':  (r) => r.timings.duration < 500,
     });
   });
 
@@ -583,7 +465,7 @@ function stageActivityUpload() {
         `${BASE_URL}/extract`,
         JSON.stringify({ object_key: objectKey }),
         { headers: getJsonHeaders() },
-        null, 'AI Extract (NEG: no assessment_id)', true
+        null
       );
       check(res, {
         // Spec: 404 for "Validation failed (missing fields, assessment not found)"
@@ -613,18 +495,15 @@ function stageQuizAndRecommend(assessmentId) {
       `${BASE_URL}/user/quiz-generate`,
       JSON.stringify({ assessment_id: assessmentId }),
       { headers: getJsonHeaders() },
-      quizGenerateDuration, 'Quiz Generate'
+      quizGenerateDuration
     );
 
     const body = safeJson(res);
 
     check(res, {
-      '[QuizGen] HTTP 200':    (r) => r.status === 200,
-      '[QuizGen] has quiz_id': (r) => body.quiz_id !== undefined,
-    });
-
-    check(res, {
-      '[QuizGen] response time < 500ms': (r) => r.timings.duration < 500,
+      '[QuizGen] HTTP 200':               (r) => r.status === 200,
+      '[QuizGen] has quiz_id':            (r) => body.quiz_id !== undefined,
+      '[QuizGen] response time < 500ms':  (r) => r.timings.duration < 500,
     });
 
     if (res.status === 200) quizId = body.quiz_id;
@@ -637,7 +516,7 @@ function stageQuizAndRecommend(assessmentId) {
         `${BASE_URL}/user/quiz-generate`,
         JSON.stringify({}),
         { headers: getJsonHeaders() },
-        null, 'Quiz Generate (NEG: no assessment_id)', true
+        null
       );
       check(res, {
         '[QuizGen-NEG] HTTP 400 missing assessment_id': (r) => r.status === 400,
@@ -657,15 +536,12 @@ function stageQuizAndRecommend(assessmentId) {
       `${BASE_URL}/user/init-recommend`,
       JSON.stringify({ assessment_id: assessmentId }),
       { headers: getJsonHeaders() },
-      initRecommendDuration, 'Init Recommend'
+      initRecommendDuration
     );
 
     check(res, {
-      '[InitRec] HTTP 200': (r) => r.status === 200,
-    });
-
-    check(res, {
-      '[InitRec] response time < 500ms': (r) => r.timings.duration < 500,
+      '[InitRec] HTTP 200':               (r) => r.status === 200,
+      '[InitRec] response time < 500ms':  (r) => r.timings.duration < 500,
     });
   });
 
@@ -692,10 +568,10 @@ function stageQuizAndRecommend(assessmentId) {
 // ─────────────────────────────────────────────────────────────
 function stageSimulation(assessmentId) {
   // Randomise cluster_id per VU iteration to spread realistic cluster load
-  const clusterId  = MANUAL_CLUSTER_ID    !== null ? MANUAL_CLUSTER_ID    : randomIntBetween(100, 999);
+  const clusterId  = randomIntBetween(100, 999);
   // Spec gap workaround: derive simulation_id from assessmentId
   // Update this if the API ever returns simulation_id from simulation-create.
-  const simulationId = MANUAL_SIMULATION_ID !== null ? MANUAL_SIMULATION_ID : assessmentId;
+  const simulationId = assessmentId;
   const userId     = formatUserId(assessmentId);  // "user_<id>" per spec example
 
   // ── 3.1 Simulation Create ──────────────────────────────────
@@ -708,15 +584,12 @@ function stageSimulation(assessmentId) {
         cluster_id:    clusterId,
       }),
       { headers: getJsonHeaders() },
-      simCreateDuration, 'Simulation Create'
+      simCreateDuration
     );
 
     createOk = check(res, {
-      '[SimCreate] HTTP 200': (r) => r.status === 200,
-    });
-
-    check(res, {
-      '[SimCreate] response time < 500ms': (r) => r.timings.duration < 500,
+      '[SimCreate] HTTP 200':               (r) => r.status === 200,
+      '[SimCreate] response time < 500ms':  (r) => r.timings.duration < 500,
     });
   });
 
@@ -727,7 +600,7 @@ function stageSimulation(assessmentId) {
         `${BASE_URL}/user/simulation-create`,
         JSON.stringify({ assessment_id: assessmentId }),
         { headers: getJsonHeaders() },
-        null, 'Simulation Create (NEG: no cluster_id)', true
+        null
       );
       check(res, {
         '[SimCreate-NEG] HTTP 400 missing cluster_id': (r) => r.status === 400,
@@ -747,15 +620,13 @@ function stageSimulation(assessmentId) {
         cluster_id:    clusterId,
       }),
       { headers: getJsonHeaders() },
-      simEvalDuration, 'Simulation Evaluation'
+      simEvalDuration
     );
 
     check(res, {
-      '[SimEval] HTTP 200 or 404': (r) => r.status === 200 || r.status === 404,
-    });
-
-    check(res, {
-      '[SimEval] response time < 500ms': (r) => r.timings.duration < 500,
+      // Allow 404 in addition to 200 due to the spec gap on simulation_id derivation
+      '[SimEval] HTTP 200 or 404':          (r) => r.status === 200 || r.status === 404,
+      '[SimEval] response time < 500ms':    (r) => r.timings.duration < 500,
     });
   });
 
@@ -766,7 +637,7 @@ function stageSimulation(assessmentId) {
         `${BASE_URL}/user/simulation-evaluation`,
         JSON.stringify({ assessment_id: assessmentId, cluster_id: clusterId }),
         { headers: getJsonHeaders() },
-        null, 'Simulation Evaluation (NEG: no sim_id)', true
+        null
       );
       check(res, {
         '[SimEval-NEG] HTTP 400 missing simulation_id': (r) => r.status === 400,
@@ -787,15 +658,12 @@ function stageSimulation(assessmentId) {
         revise_reason: randomItem(REVISE_REASONS),
       }),
       { headers: getJsonHeaders() },
-      reviseRecommendDuration, 'Revise Recommend'
+      reviseRecommendDuration
     );
 
     check(res, {
-      '[ReviseRec] HTTP 200': (r) => r.status === 200,
-    });
-
-    check(res, {
-      '[ReviseRec] response time < 500ms': (r) => r.timings.duration < 500,
+      '[ReviseRec] HTTP 200':               (r) => r.status === 200,
+      '[ReviseRec] response time < 500ms':  (r) => r.timings.duration < 500,
     });
   });
 
@@ -806,7 +674,7 @@ function stageSimulation(assessmentId) {
         `${BASE_URL}/user/revise-recommend`,
         JSON.stringify({ assessment_id: assessmentId }),
         { headers: getJsonHeaders() },
-        null, 'Revise Recommend (NEG: no reason)', true
+        null
       );
       check(res, {
         '[ReviseRec-NEG] HTTP 400 missing revise_reason': (r) => r.status === 400,
@@ -828,15 +696,12 @@ function stageSimulation(assessmentId) {
         user_id:       userId,            // string, e.g. "user_100001"
       }),
       { headers: getJsonHeaders() },
-      dashRecommendDuration, 'Dash Recommend'
+      dashRecommendDuration
     );
 
     check(res, {
-      '[DashRec] HTTP 200': (r) => r.status === 200,
-    });
-
-    check(res, {
-      '[DashRec] response time < 500ms': (r) => r.timings.duration < 500,
+      '[DashRec] HTTP 200':               (r) => r.status === 200,
+      '[DashRec] response time < 500ms':  (r) => r.timings.duration < 500,
     });
   });
 
@@ -847,7 +712,7 @@ function stageSimulation(assessmentId) {
         `${BASE_URL}/user/dash-recommend`,
         JSON.stringify({ assessment_id: assessmentId }),
         { headers: getJsonHeaders() },
-        null, 'Dash Recommend (NEG: no user_id)', true
+        null
       );
       check(res, {
         '[DashRec-NEG] HTTP 400 missing user_id': (r) => r.status === 400,
@@ -950,11 +815,6 @@ export function teardown(data) {
 export function handleSummary(data) {
   const m = data.metrics;
 
-  // txnLog is the module-level array populated by apiPost() during the run.
-  // For multi-VU profiles it contains this VU context's transactions.
-  // For smoke (1 VU) it contains the complete transaction history.
-  const txnData = typeof txnLog !== 'undefined' ? txnLog : [];
-
   function val(name, key) {
     const metric = m[name];
     if (!metric) return null;
@@ -997,10 +857,6 @@ export function handleSummary(data) {
     year: 'numeric', month: 'long', day: 'numeric',
     hour: '2-digit', minute: '2-digit', timeZoneName: 'short',
   });
-
-  // Serialise transaction log for embedding into the HTML report.
-  // txnData was captured at handleSummary invocation from the module-level array.
-  const txnDataJson = JSON.stringify(txnData);
 
   const endpointRows = endpoints.map(ep => {
     const p95    = p(ep.metric, 95);
@@ -1110,27 +966,6 @@ tbody tr.row-fail{background:rgba(239,68,68,.04)}
 .footer{border-top:1px solid var(--border);padding:1.5rem 2rem;text-align:center;font-family:var(--mono);font-size:.68rem;color:var(--muted)}
 .spec-note{background:rgba(6,182,212,.06);border:1px solid rgba(6,182,212,.2);border-radius:8px;padding:1rem 1.2rem;margin-bottom:2rem;font-family:var(--mono);font-size:.72rem;color:var(--muted)}
 .spec-note strong{color:var(--accent2)}
-/* Transaction log */
-.txn-wrap{background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:2.5rem}
-.txn-controls{display:flex;gap:.8rem;padding:1rem 1.2rem;border-bottom:1px solid var(--border);flex-wrap:wrap;align-items:center}
-.txn-controls input,.txn-controls select{background:var(--surface2);border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:.75rem;padding:.35rem .7rem;border-radius:6px;outline:none}
-.txn-controls input{flex:1;min-width:160px}.txn-controls input:focus{border-color:var(--accent)}
-.txn-count{font-family:var(--mono);font-size:.7rem;color:var(--muted);margin-left:auto}
-.txn-table-wrap{overflow-x:auto;max-height:520px;overflow-y:auto}
-.txn-table{width:100%;border-collapse:collapse;font-size:.78rem}
-.txn-table thead tr{background:var(--surface2);position:sticky;top:0;z-index:1}
-.txn-table th{font-family:var(--mono);font-size:.6rem;letter-spacing:.1em;color:var(--muted);text-transform:uppercase;padding:.6rem 1rem;text-align:left;white-space:nowrap;border-bottom:1px solid var(--border)}
-.txn-table td{padding:.55rem 1rem;border-bottom:1px solid rgba(30,45,69,.5);vertical-align:top;font-family:var(--mono);font-size:.72rem;white-space:nowrap}
-.txn-table tr.txn-ok td{color:var(--text)}.txn-table tr.txn-fail td{color:#fca5a5}
-.txn-table tr.txn-neg td{color:var(--amber)}
-.txn-table tr:last-child td{border-bottom:none}
-.txn-table td.body-cell{white-space:pre-wrap;word-break:break-all;max-width:320px;font-size:.68rem;color:var(--muted)}
-.txn-table td.body-cell:hover{color:var(--text)}
-.status-chip{display:inline-block;padding:.1rem .45rem;border-radius:4px;font-weight:600;font-size:.68rem}
-.status-2xx{background:rgba(34,197,94,.12);color:var(--green)}.status-4xx{background:rgba(245,158,11,.12);color:var(--amber)}
-.status-5xx{background:rgba(239,68,68,.12);color:var(--red)}.status-neg{background:rgba(148,163,184,.1);color:#94a3b8}
-.timing-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:.2rem .6rem;font-size:.65rem;color:var(--muted);margin-top:.25rem}
-.hidden{display:none}
 </style>
 </head>
 <body>
@@ -1154,7 +989,6 @@ tbody tr.row-fail{background:rgba(239,68,68,.04)}
     <div class="pill">Overall p95: <strong>${overallP95} ms</strong></div>
     <div class="pill">Error Rate: <strong>${errRate.toFixed(2)}%</strong></div>
     <div class="pill">Workflow Complete: <strong>${wfCompletion}%</strong></div>
-    <div class="pill">Transactions Logged: <strong>${txnData.length}</strong></div>
   </div>
 </div>
 <div class="main">
@@ -1203,42 +1037,7 @@ tbody tr.row-fail{background:rgba(239,68,68,.04)}
   <div class="section-title">HTTP System Metrics</div>
   <div class="sys-grid">${sysRows}</div>
 </div>
-<div class="section-title">Request / Response Log</div>
-  <div class="txn-wrap">
-    <div class="txn-controls">
-      <input type="text"   id="txnSearch"      placeholder="Filter by label, URL, body, status…" oninput="filterTxn()"/>
-      <select id="txnStatus" onchange="filterTxn()">
-        <option value="">All statuses</option>
-        <option value="2xx">2xx OK</option>
-        <option value="4xx">4xx Client Error</option>
-        <option value="5xx">5xx Server Error</option>
-        <option value="neg">Negative Tests</option>
-      </select>
-      <select id="txnLabel" onchange="filterTxn()"><option value="">All endpoints</option></select>
-      <span class="txn-count" id="txnCount"></span>
-    </div>
-    <div class="txn-table-wrap">
-      <table class="txn-table" id="txnTable">
-        <thead>
-          <tr>
-            <th>#</th>
-            <th>Timestamp</th>
-            <th>VU / Iter</th>
-            <th>Label</th>
-            <th>Endpoint</th>
-            <th>Status</th>
-            <th>Total (ms)</th>
-            <th>Wait (ms)</th>
-            <th>Request Body</th>
-            <th>Response Body</th>
-          </tr>
-        </thead>
-        <tbody id="txnBody"></tbody>
-      </table>
-    </div>
-  </div>
-</div>
-<div class="footer">Generated by k6 v2.2 | Career API E2E | Profile: ${PROFILE.toUpperCase()} | ${runDate}</div>
+<div class="footer">Generated by k6 v2.1 | Career API E2E | Profile: ${PROFILE.toUpperCase()} | ${runDate}</div>
 <script>
 (function(){
   const labels=${chartLabels},p95=${chartP95},sla=${chartSLA},colors=${chartColors};
@@ -1264,84 +1063,6 @@ tbody tr.row-fail{background:rgba(239,68,68,.04)}
     }
   });
 })();
-})();
-</scr` + `ipt>
-<script>
-// ── Transaction log data injected from k6 txnLog ──
-const TXN_DATA = ${txnDataJson};
-
-(function(){
-  const tbody    = document.getElementById('txnBody');
-  const countEl  = document.getElementById('txnCount');
-  const labelSel = document.getElementById('txnLabel');
-
-  // Populate label filter dropdown
-  const labels = [...new Set(TXN_DATA.map(t => t.label))].sort();
-  labels.forEach(l => {
-    const o = document.createElement('option');
-    o.value = l; o.textContent = l;
-    labelSel.appendChild(o);
-  });
-
-  function statusChip(status, isNeg) {
-    if (isNeg) return '<span class="status-chip status-neg">NEG ' + status + '</span>';
-    if (status >= 500) return '<span class="status-chip status-5xx">' + status + '</span>';
-    if (status >= 400) return '<span class="status-chip status-4xx">' + status + '</span>';
-    return '<span class="status-chip status-2xx">' + status + '</span>';
-  }
-
-  function renderRows(data) {
-    if (!data.length) {
-      tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--muted);padding:2rem">No transactions match the current filter</td></tr>';
-      countEl.textContent = '0 transactions';
-      return;
-    }
-    tbody.innerHTML = data.map((t, i) => {
-      const rowClass = t.isNegative ? 'txn-neg' : (t.ok ? 'txn-ok' : 'txn-fail');
-      const ts = t.ts.replace('T', ' ').replace(/\.\d+Z$/, ' UTC');
-      return '<tr class="' + rowClass + '">'
-        + '<td>' + (i + 1) + '</td>'
-        + '<td>' + ts + '</td>'
-        + '<td>' + t.vu + ' / ' + t.iter + '</td>'
-        + '<td>' + t.label + '</td>'
-        + '<td>' + t.path + '</td>'
-        + '<td>' + statusChip(t.resStatus, t.isNegative) + '</td>'
-        + '<td>' + t.duration.toFixed(1) + '<div class="timing-grid"><span>blk ' + t.blocked + '</span><span>snd ' + t.sending + '</span><span>wait ' + t.waiting + '</span><span>rcv ' + t.receiving + '</span><span>conn ' + t.connecting + '</span></div></td>'
-        + '<td>' + t.waiting.toFixed(1) + '</td>'
-        + '<td class="body-cell">' + escHtml(t.reqBody) + '</td>'
-        + '<td class="body-cell">' + escHtml(t.resBody) + '</td>'
-        + '</tr>';
-    }).join('');
-    countEl.textContent = data.length + ' transaction' + (data.length !== 1 ? 's' : '');
-  }
-
-  function escHtml(s) {
-    return String(s)
-      .replace(/&/g,'&amp;').replace(/</g,'&lt;')
-      .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-  }
-
-  window.filterTxn = function() {
-    const q      = document.getElementById('txnSearch').value.toLowerCase();
-    const status = document.getElementById('txnStatus').value;
-    const label  = document.getElementById('txnLabel').value;
-
-    const filtered = TXN_DATA.filter(t => {
-      const matchQ = !q || [t.label, t.path, t.reqBody, t.resBody, String(t.resStatus)]
-        .some(s => s.toLowerCase().includes(q));
-      const matchStatus = !status
-        || (status === '2xx' && t.resStatus >= 200 && t.resStatus < 300 && !t.isNegative)
-        || (status === '4xx' && t.resStatus >= 400 && t.resStatus < 500)
-        || (status === '5xx' && t.resStatus >= 500)
-        || (status === 'neg' && t.isNegative);
-      const matchLabel = !label || t.label === label;
-      return matchQ && matchStatus && matchLabel;
-    });
-    renderRows(filtered);
-  };
-
-  renderRows(TXN_DATA);
-})();
 </scr` + `ipt>
 </body>
 </html>`;
@@ -1360,9 +1081,8 @@ const TXN_DATA = ${txnDataJson};
   console.log(summary);
 
   return {
-    'stdout':                        summary,
-    'results/k6_report.html':        html,
-    'results/k6_summary.json':       JSON.stringify(data, null, 2),
-    'results/k6_transactions.json':  JSON.stringify(txnData, null, 2),
+    'stdout':                  summary,
+    'results/k6_report.html':  html,
+    'results/k6_summary.json': JSON.stringify(data, null, 2),
   };
 }
